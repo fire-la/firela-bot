@@ -23,7 +23,7 @@ For real bank authentication (not sandbox), you need an external accessible URL 
 
 The easiest way to deploy BillClaw for production use:
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/fire-la/firela-connect/tree/main/packages/ui)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/fire-la/firela-bot/tree/main/packages/ui)
 
 **Benefits:**
 - Zero infrastructure management
@@ -147,7 +147,7 @@ The easiest way to connect your financial accounts:
 
 ```bash
 # 1. Clone and build
-git clone https://github.com/fire-la/firela-connect.git
+git clone https://github.com/fire-la/firela-bot.git
 cd billclaw
 pnpm install && pnpm build
 
@@ -198,7 +198,7 @@ const transactions = await billclaw.getTransactions("all", 2024, 1);
 
 ```bash
 # Clone repository
-git clone https://github.com/fire-la/firela-connect.git
+git clone https://github.com/fire-la/firela-bot.git
 cd billclaw
 
 # Install dependencies
@@ -255,6 +255,6 @@ AGPL-3.0 - see [LICENSE](./LICENSE) file for details.
 
 ## Links
 
-- [GitHub](https://github.com/fire-la/firela-connect)
+- [GitHub](https://github.com/fire-la/firela-bot)
 - [npm](https://www.npmjs.com/org/fire-la)
-- [Documentation](https://github.com/fire-la/firela-connect/wiki)
+- [Documentation](https://github.com/fire-la/firela-bot/wiki)

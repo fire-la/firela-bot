@@ -4,7 +4,7 @@
 # Unified UI + API service for Cloudflare Workers deployment
 # Combines React SPA with Hono API server
 
-name = "firela-connect"
+name = "firela-bot"
 main = "src/server/index.ts"
 compatibility_date = "2025-09-15"
 compatibility_flags = ["nodejs_compat_v2"]

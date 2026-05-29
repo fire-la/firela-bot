@@ -93,20 +93,20 @@ async function runUpgrade(_context: CliContext): Promise<void> {
 
   // Step 3: Deploy UI Worker
   const uiPath = getPackagePath("ui")
-  await Spinner.withLoading("Deploying firela-connect Worker...", () =>
+  await Spinner.withLoading("Deploying firela-bot Worker (UI)...", () =>
     spawnCommand("pnpm", ["run", "deploy"], uiPath),
   )
 
   // Step 4: Deploy Bot Worker
   const botPath = getPackagePath("firela-bot")
-  await Spinner.withLoading("Deploying firela-bot Worker...", () =>
+  await Spinner.withLoading("Deploying firela-bot Worker (Discord)...", () =>
     spawnCommand("pnpm", ["run", "deploy"], botPath),
   )
 
   // Success summary
   success("Upgrade complete!")
-  success("  - firela-connect Worker deployed")
-  success("  - firela-bot Worker deployed")
+  success("  - firela-bot Worker (UI) deployed")
+  success("  - firela-bot Worker (Discord) deployed")
 }
 
 /**

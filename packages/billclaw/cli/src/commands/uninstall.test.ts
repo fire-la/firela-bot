@@ -49,7 +49,7 @@ import inquirer from "inquirer"
 import * as fs from "node:fs/promises"
 
 const UI_TOML = `
-name = "firela-connect"
+name = "firela-bot"
 main = "src/server/index.ts"
 
 [[d1_databases]]
@@ -77,7 +77,7 @@ id = "078b1d7583954002a50f5d7df2821555"
 `
 
 const MOCK_UI_RESOURCES = {
-  workerName: "firela-connect",
+  workerName: "firela-bot",
   d1DatabaseId: "ae67cab3-392b-4f46-b783-9a8e32b6250f",
   d1DatabaseName: "firela-connect-data",
   kvNamespaceId: "59865e1e3cb34909ade239a6423f7fec",
@@ -251,7 +251,7 @@ describe("uninstall command", () => {
       // Verify endpoints: 2 Workers, 2 D1, 2 KV
       const urls = deleteCalls.map((call: unknown[]) => call[0] as string)
 
-      expect(urls.some((url) => url.includes("/workers/scripts/firela-connect"))).toBe(true)
+      expect(urls.some((url) => url.includes("/workers/scripts/firela-bot"))).toBe(true)
       expect(urls.some((url) => url.includes("/workers/scripts/firela-bot"))).toBe(true)
       expect(urls.some((url) => url.includes("/d1/database/ae67cab3"))).toBe(true)
       expect(urls.some((url) => url.includes("/d1/database/575adfe2"))).toBe(true)

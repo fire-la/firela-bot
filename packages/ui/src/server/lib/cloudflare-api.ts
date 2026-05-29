@@ -8,7 +8,7 @@
  */
 
 const CF_API_BASE = "https://api.cloudflare.com/client/v4"
-const GITHUB_REPO = "fire-la/firela-connect"
+const GITHUB_REPO = "fire-la/firela-bot"
 
 /**
  * Make an authenticated Cloudflare API request

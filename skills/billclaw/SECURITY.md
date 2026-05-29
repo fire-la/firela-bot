@@ -12,10 +12,10 @@ All BillClaw packages are open-source and available for audit:
 
 | Package | npm Registry | Source Code |
 |---------|--------------|-------------|
-| `@firela/billclaw-core` | [npmjs.com](https://www.npmjs.com/package/@firela/billclaw-core) | [GitHub](https://github.com/fire-la/firela-connect/tree/main/packages/core) |
-| `@firela/billclaw-openclaw` | [npmjs.com](https://www.npmjs.com/package/@firela/billclaw-openclaw) | [GitHub](https://github.com/fire-la/firela-connect/tree/main/packages/openclaw) |
-| `@firela/billclaw-cli` | [npmjs.com](https://www.npmjs.com/package/@firela/billclaw-cli) | [GitHub](https://github.com/fire-la/firela-connect/tree/main/packages/cli) |
-| `@firela/billclaw-connect` | [npmjs.com](https://www.npmjs.com/package/@firela/billclaw-connect) | [GitHub](https://github.com/fire-la/firela-connect/tree/main/packages/connect) |
+| `@firela/billclaw-core` | [npmjs.com](https://www.npmjs.com/package/@firela/billclaw-core) | [GitHub](https://github.com/fire-la/firela-bot/tree/main/packages/core) |
+| `@firela/billclaw-openclaw` | [npmjs.com](https://www.npmjs.com/package/@firela/billclaw-openclaw) | [GitHub](https://github.com/fire-la/firela-bot/tree/main/packages/openclaw) |
+| `@firela/billclaw-cli` | [npmjs.com](https://www.npmjs.com/package/@firela/billclaw-cli) | [GitHub](https://github.com/fire-la/firela-bot/tree/main/packages/cli) |
+| `@firela/billclaw-connect` | [npmjs.com](https://www.npmjs.com/package/@firela/billclaw-connect) | [GitHub](https://github.com/fire-la/firela-bot/tree/main/packages/connect) |
 
 ### 2. npm Provenance (Supply Chain Security)
 
@@ -65,7 +65,7 @@ These detections come from **transitive npm dependencies** (dependencies of depe
 - These are common patterns in Node.js ecosystem
 - Used by legitimate packages for process management
 - Not used for malicious purposes in BillClaw
-- Source: Review our code at [GitHub](https://github.com/fire-la/firela-connect)
+- Source: Review our code at [GitHub](https://github.com/fire-la/firela-bot)
 
 ### Detection: Sensitive API Requirements
 
@@ -121,7 +121,7 @@ Note: No data flows through BillClaw servers
 ### 1. Audit the Source Code
 
 ```bash
-git clone https://github.com/fire-la/firela-connect
+git clone https://github.com/fire-la/firela-bot
 cd billclaw
 pnpm install
 pnpm build
@@ -163,7 +163,7 @@ ls -la ~/.firela/billclaw/
 If you discover a security vulnerability, please report it privately:
 
 - **Email**: security@fire-la.dev
-- **PGP Key**: Available at https://github.com/fire-la/firela-connect/security
+- **PGP Key**: Available at https://github.com/fire-la/firela-bot/security
 
 We will:
 1. Acknowledge receipt within 48 hours
@@ -180,7 +180,7 @@ We will:
 
 ## License
 
-BillClaw is released under the GNU Affero General Public License v3.0. See [LICENSE](https://github.com/fire-la/firela-connect/blob/main/LICENSE) for details.
+BillClaw is released under the GNU Affero General Public License v3.0. See [LICENSE](https://github.com/fire-la/firela-bot/blob/main/LICENSE) for details.
 
 ---
 

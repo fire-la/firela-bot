@@ -56,7 +56,7 @@
   **After (multi-line YAML nested JSON):**
 
   ```yaml
-  homepage: https://github.com/fire-la/firela-connect
+  homepage: https://github.com/fire-la/firela-bot
   metadata:
     {
       "openclaw":

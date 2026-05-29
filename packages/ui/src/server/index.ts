@@ -63,7 +63,7 @@ app.use(
 app.get("/health", (c) => {
   return c.json({
     status: "ok",
-    service: "firela-connect",
+    service: "firela-bot",
     version: "0.0.1",
   })
 })

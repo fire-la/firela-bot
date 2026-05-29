@@ -27,7 +27,7 @@ import { getCloudflareApiToken } from "../lib/cloudflare-helpers.js"
 /**
  * Worker script name (matches wrangler.toml `name` field)
  */
-const SCRIPT_NAME = "firela-connect"
+const SCRIPT_NAME = "firela-bot"
 
 /**
  * Schema for uninstall delete request body
@@ -99,7 +99,7 @@ cloudflareRoutes.post("/upgrade", async (c) => {
 
   // Find Worker bundle asset
   const bundleAsset = release.assets.find(
-    (a) => a.name === "firela-connect-worker.js" || a.name.endsWith("-worker.js"),
+    (a) => a.name === "firela-bot-worker.js" || a.name.endsWith("-worker.js"),
   )
   if (!bundleAsset) {
     return c.json(

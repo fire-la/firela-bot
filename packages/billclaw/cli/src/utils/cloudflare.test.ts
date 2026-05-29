@@ -69,7 +69,7 @@ describe("cloudflare utilities", () => {
   describe("parseWranglerToml", () => {
     it("should extract resources from UI wrangler.toml content", () => {
       const uiToml = `
-name = "firela-connect"
+name = "firela-bot"
 main = "src/server/index.ts"
 compatibility_date = "2025-09-15"
 
@@ -84,7 +84,7 @@ id = "59865e1e3cb34909ade239a6423f7fec"
 `
       const result = parseWranglerToml(uiToml)
 
-      expect(result.workerName).toBe("firela-connect")
+      expect(result.workerName).toBe("firela-bot")
       expect(result.d1DatabaseId).toBe("ae67cab3-392b-4f46-b783-9a8e32b6250f")
       expect(result.d1DatabaseName).toBe("firela-connect-data")
       expect(result.kvNamespaceId).toBe("59865e1e3cb34909ade239a6423f7fec")

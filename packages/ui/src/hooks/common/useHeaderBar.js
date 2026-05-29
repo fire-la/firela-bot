@@ -69,7 +69,7 @@ export const useHeaderBar = ({ onMobileMenuToggle: _onMobileMenuToggle, drawerOp
     return false; // Default: no login required
   }, [headerNavModules]);
 
-  // All firela-connect pages use unified PageLayout with sidebar
+  // All firela-bot pages use unified PageLayout with sidebar
   const isConsoleRoute = true;
 
   const theme = useTheme();

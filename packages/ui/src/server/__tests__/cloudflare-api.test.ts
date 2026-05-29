@@ -127,7 +127,7 @@ describe("enumerateResources", () => {
     mockFetch
       .mockResolvedValueOnce(
         cfResponse(true, [
-          { id: "firela-connect" },
+          { id: "firela-bot" },
           { id: "other-worker" },
           { id: "billclaw-bot" },
         ]),
@@ -149,7 +149,7 @@ describe("enumerateResources", () => {
     const result = await enumerateResources("token", "acc-123")
 
     expect(result.workers).toEqual([
-      { id: "firela-connect" },
+      { id: "firela-bot" },
       { id: "billclaw-bot" },
     ])
     expect(result.databases).toEqual([
@@ -224,7 +224,7 @@ describe("getLatestRelease", () => {
         Promise.resolve({
           tag_name: "v1.2.3",
           assets: [
-            { id: 100, name: "firela-connect-worker.js", browser_download_url: "https://example.com/worker.js" },
+            { id: 100, name: "firela-bot-worker.js", browser_download_url: "https://example.com/worker.js" },
             { id: 101, name: "source.tar.gz", browser_download_url: "https://example.com/source.tar.gz" },
           ],
         }),
@@ -234,11 +234,11 @@ describe("getLatestRelease", () => {
 
     expect(result.tagName).toBe("v1.2.3")
     expect(result.assets).toEqual([
-      { id: 100, name: "firela-connect-worker.js" },
+      { id: 100, name: "firela-bot-worker.js" },
       { id: 101, name: "source.tar.gz" },
     ])
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.github.com/repos/fire-la/firela-connect/releases/latest",
+      "https://api.github.com/repos/fire-la/firela-bot/releases/latest",
       expect.objectContaining({
         headers: {
           Authorization: "Bearer gh-token",
@@ -263,7 +263,7 @@ describe("getLatestRelease", () => {
         Promise.resolve({
           tag_name: "v1.2.3",
           assets: [
-            { id: 100, name: "firela-connect-worker.js", browser_download_url: "https://example.com/worker.js" },
+            { id: 100, name: "firela-bot-worker.js", browser_download_url: "https://example.com/worker.js" },
           ],
         }),
     })
@@ -272,7 +272,7 @@ describe("getLatestRelease", () => {
 
     expect(result.tagName).toBe("v1.2.3")
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.github.com/repos/fire-la/firela-connect/releases/latest",
+      "https://api.github.com/repos/fire-la/firela-bot/releases/latest",
       expect.objectContaining({
         headers: {
           Accept: "application/vnd.github+json",
@@ -296,7 +296,7 @@ describe("downloadReleaseAsset", () => {
 
     expect(result).toBe("const workerCode = 'hello';")
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.github.com/repos/fire-la/firela-connect/releases/assets/42",
+      "https://api.github.com/repos/fire-la/firela-bot/releases/assets/42",
       expect.objectContaining({
         headers: {
           Authorization: "Bearer gh-token",
@@ -325,7 +325,7 @@ describe("downloadReleaseAsset", () => {
 
     expect(result).toBe("const workerCode = 'hello';")
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.github.com/repos/fire-la/firela-connect/releases/assets/42",
+      "https://api.github.com/repos/fire-la/firela-bot/releases/assets/42",
       expect.objectContaining({
         headers: {
           Accept: "application/octet-stream",

@@ -41,6 +41,6 @@ jobs:
             --name "BillClaw" \
             --version ${{ steps.get-version.outputs.version }} \
             --tags latest \
-            --changelog "Release ${{ steps.get-version.outputs.version }}: https://github.com/fire-la/firela-connect/releases/tag/v${{ steps.get-version.outputs.version }}"
+            --changelog "Release ${{ steps.get-version.outputs.version }}: https://github.com/fire-la/firela-bot/releases/tag/v${{ steps.get-version.outputs.version }}"
         env:
           CLAWHUB_DISABLE_TELEMETRY: 1

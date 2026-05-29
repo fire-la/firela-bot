@@ -1126,7 +1126,7 @@ export function parseWebhookError(
           "Check that required fields are present",
           "Run setup wizard to reconfigure",
         ],
-        docsLink: "https://github.com/fire-la/firela-connect/blob/main/docs/user-guide.md#webhook-configuration",
+        docsLink: "https://github.com/fire-la/firela-bot/blob/main/docs/user-guide.md#webhook-configuration",
       },
       [
         {
@@ -1190,7 +1190,7 @@ export function parseWebhookError(
           "Run 'bills setup' to configure the webhook receiver",
           "Select a mode (auto, direct, or polling)",
         ],
-        docsLink: "https://github.com/fire-la/firela-connect/blob/main/docs/user-guide.md#webhook-configuration",
+        docsLink: "https://github.com/fire-la/firela-bot/blob/main/docs/user-guide.md#webhook-configuration",
       },
       [
         {
@@ -1254,7 +1254,7 @@ export function parseWebhookError(
           "Configure a public URL in settings",
           "Use polling mode as a fallback",
         ],
-        docsLink: "https://github.com/fire-la/firela-connect/blob/main/docs/user-guide.md#webhook-modes",
+        docsLink: "https://github.com/fire-la/firela-bot/blob/main/docs/user-guide.md#webhook-modes",
       },
       [
         {
@@ -1375,7 +1375,7 @@ export function parseVltError(
           "Re-authenticate by obtaining a new token from VLT dashboard",
           "Verify the token has not been revoked",
         ],
-        docsLink: "https://github.com/fire-la/firela-connect/blob/main/docs/guide/vlt-integration.md",
+        docsLink: "https://github.com/fire-la/firela-bot/blob/main/docs/guide/vlt-integration.md",
       },
       [
         {
@@ -1409,7 +1409,7 @@ export function parseVltError(
           "Update the token in BillClaw configuration",
           "Tokens typically expire after a period of time for security",
         ],
-        docsLink: "https://github.com/fire-la/firela-connect/blob/main/docs/guide/vlt-integration.md",
+        docsLink: "https://github.com/fire-la/firela-bot/blob/main/docs/guide/vlt-integration.md",
       },
       [
         {
@@ -1439,7 +1439,7 @@ export function parseVltError(
           "Reduce upload frequency if possible",
           "Check VLT plan limits if consistent uploads are needed",
         ],
-        docsLink: "https://github.com/fire-la/firela-connect/blob/main/docs/guide/vlt-integration.md",
+        docsLink: "https://github.com/fire-la/firela-bot/blob/main/docs/guide/vlt-integration.md",
       },
       [
         {
@@ -1475,7 +1475,7 @@ export function parseVltError(
           "Check VLT service status if the issue persists",
           "Contact VLT support if errors continue",
         ],
-        docsLink: "https://github.com/fire-la/firela-connect/blob/main/docs/guide/vlt-integration.md",
+        docsLink: "https://github.com/fire-la/firela-bot/blob/main/docs/guide/vlt-integration.md",
       },
       [
         {
@@ -1538,7 +1538,7 @@ export function parseVltError(
           "Valid regions: cn, us, eu-core, de",
           "Update to a valid region",
         ],
-        docsLink: "https://github.com/fire-la/firela-connect/blob/main/docs/guide/vlt-integration.md",
+        docsLink: "https://github.com/fire-la/firela-bot/blob/main/docs/guide/vlt-integration.md",
       },
       [
         {
@@ -1569,7 +1569,7 @@ export function parseVltError(
           "Try uploading again later",
           "Your transactions are safely stored locally",
         ],
-        docsLink: "https://github.com/fire-la/firela-connect/blob/main/docs/guide/vlt-integration.md",
+        docsLink: "https://github.com/fire-la/firela-bot/blob/main/docs/guide/vlt-integration.md",
       },
       [
         {
@@ -1597,7 +1597,7 @@ export function parseVltError(
         "Verify VLT configuration is correct",
         "Try again later",
       ],
-      docsLink: "https://github.com/fire-la/firela-connect/blob/main/docs/guide/vlt-integration.md",
+      docsLink: "https://github.com/fire-la/firela-bot/blob/main/docs/guide/vlt-integration.md",
     },
     [
       {
@@ -1616,7 +1616,7 @@ export function parseVltError(
  */
 export function getTroubleshootingUrl(category: ErrorCategory): string {
   const baseUrl =
-    "https://github.com/fire-la/firela-connect/blob/main/docs/troubleshooting.md"
+    "https://github.com/fire-la/firela-bot/blob/main/docs/troubleshooting.md"
   const urls: Partial<Record<ErrorCategory, string>> = {
     [ErrorCategory.CONFIG]: `${baseUrl}#configuration-issues`,
     [ErrorCategory.CREDENTIALS]: `${baseUrl}#credentials--authentication`,
