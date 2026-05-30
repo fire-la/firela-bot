@@ -54,7 +54,7 @@ main = "src/server/index.ts"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "firela-connect-data"
+database_name = "firela-bot-data"
 database_id = "ae67cab3-392b-4f46-b783-9a8e32b6250f"
 
 [[kv_namespaces]]
@@ -79,7 +79,7 @@ id = "078b1d7583954002a50f5d7df2821555"
 const MOCK_UI_RESOURCES = {
   workerName: "firela-bot",
   d1DatabaseId: "ae67cab3-392b-4f46-b783-9a8e32b6250f",
-  d1DatabaseName: "firela-connect-data",
+  d1DatabaseName: "firela-bot-data",
   kvNamespaceId: "59865e1e3cb34909ade239a6423f7fec",
   kvBindingName: "CONFIG",
 }

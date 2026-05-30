@@ -75,7 +75,7 @@ compatibility_date = "2025-09-15"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "firela-connect-data"
+database_name = "firela-bot-data"
 database_id = "ae67cab3-392b-4f46-b783-9a8e32b6250f"
 
 [[kv_namespaces]]
@@ -86,7 +86,7 @@ id = "59865e1e3cb34909ade239a6423f7fec"
 
       expect(result.workerName).toBe("firela-bot")
       expect(result.d1DatabaseId).toBe("ae67cab3-392b-4f46-b783-9a8e32b6250f")
-      expect(result.d1DatabaseName).toBe("firela-connect-data")
+      expect(result.d1DatabaseName).toBe("firela-bot-data")
       expect(result.kvNamespaceId).toBe("59865e1e3cb34909ade239a6423f7fec")
       expect(result.kvBindingName).toBe("CONFIG")
     })
