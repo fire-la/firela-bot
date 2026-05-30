@@ -32,7 +32,7 @@ Free tier: 100K requests/day, 10ms CPU time — more than enough for personal us
 
 See the [Cloudflare Deployment Guide](./billclaw-docs/docs/guide/cloudflare-deployment.md) for detailed instructions.
 
-## BillClaw
+## About BillClaw
 
 BillClaw is the billing ingestion engine inside firela-bot. It uses a framework-agnostic core with runtime adapters:
 
