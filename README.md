@@ -1,19 +1,26 @@
-# BillClaw
+# firela-bot 🤖
 
-Financial data sovereignty with multi-platform plugin architecture.
+A minimalist, self-hosted AI financial advisor for FIRE planning.
 
 ## Overview
 
-BillClaw is an open-source financial data import system that puts you in control of your financial data. Instead of storing your banking credentials with third-party services, BillClaw stores them locally and syncs transactions directly to your own storage.
+firela-bot is the **BOT** component of [FIREla](https://firela.io) — it reads your lifetime ledger data to build your financial profile and deliver personalized FIRE (Financial Independence, Retire Early) insights.
+
+FIREla consists of two independent parts that work together:
+
+| | BOT | APP |
+|---|---|---|
+| What | firela-bot | [firela-app](https://github.com/fire-la/firela-app) |
+| Role | AI advisor for FIRE planning | Beancount lifetime ledger |
+| Focus | Automated billing ingestion | Zero tracking · Full privacy |
 
 ### Key Features
 
-- **Data Sovereignty**: Your credentials stay on your machine
-- **Multi-Source**: Import from Plaid, Gmail, and GoCardless
-- **Flexible Export**: Export to Beancount, Ledger, or CSV
-- **Framework Agnostic**: Use with OpenClaw, as a CLI, or as a library
-- **Local Storage**: All data stored locally with optional encryption
-- **Real-time Sync**: Webhook support for instant transaction updates
+- **AI Financial Advisor**: Personalized FIRE planning based on your actual spending and income
+- **Automated Billing Ingestion**: Import transactions from Plaid, Gmail, and GoCardless
+- **Self-Hosted & Private**: Deploy to Cloudflare Workers (free tier) — your data stays yours
+- **Lifetime Ledger Integration**: Reads from your Beancount ledger for accurate financial analysis
+- **Flexible Export**: Beancount, Ledger, or CSV output formats
 
 ## Production Deployment
 
@@ -21,7 +28,7 @@ For real bank authentication (not sandbox), you need an external accessible URL 
 
 ### Cloudflare Workers (Recommended)
 
-The easiest way to deploy BillClaw for production use:
+The easiest way to deploy firela-bot for production use:
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/fire-la/firela-bot/tree/main/packages/ui)
 
