@@ -22,22 +22,13 @@ FIREla consists of two independent parts that work together:
 - **Lifetime Ledger Integration**: Reads from your Beancount ledger for accurate financial analysis
 - **Flexible Export**: Beancount, Ledger, or CSV output formats
 
-## Production Deployment
+## Deployment
 
-For real bank authentication (not sandbox), you need an external accessible URL since Plaid callbacks cannot reach `localhost`.
-
-### Cloudflare Workers (Recommended)
-
-The easiest way to deploy firela-bot for production use:
+Deploy to Cloudflare Workers with one click:
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/fire-la/firela-bot/tree/main/packages/ui)
 
-**Benefits:**
-- Zero infrastructure management
-- Global edge network (300+ locations)
-- Automatic HTTPS
-- Generous free tier
-- One-click deployment per service
+Free tier: 100K requests/day, 10ms CPU time — more than enough for personal use.
 
 See the [Cloudflare Deployment Guide](./billclaw-docs/docs/guide/cloudflare-deployment.md) for detailed instructions.
 
