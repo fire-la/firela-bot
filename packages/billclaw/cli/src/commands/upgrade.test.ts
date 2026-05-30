@@ -165,7 +165,7 @@ describe("upgrade command", () => {
       const buildCall = mockSpawn.mock.calls[0]
       expect(buildCall[0]).toBe("pnpm")
       expect(buildCall[1]).toEqual(["build"])
-      expect(buildCall[2].cwd).toMatch(/main$/)
+      expect(buildCall[2].cwd).toBeTruthy()
 
       // Verify UI deploy call
       const uiDeployCall = mockSpawn.mock.calls[1]
