@@ -11,8 +11,8 @@ FIREla consists of two independent parts that work together:
 | | BOT | APP |
 |---|---|---|
 | What | firela-bot | [firela-app](https://github.com/fire-la/firela-app) |
-| Role | AI advisor for FIRE planning | Beancount lifetime ledger |
-| Focus | Automated billing ingestion | Zero tracking · Full privacy |
+| | AI advisor for FIRE planning | Beancount lifetime ledger |
+| | Automated billing ingestion | Zero tracking · Full privacy |
 
 ### Key Features
 
