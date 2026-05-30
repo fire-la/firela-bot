@@ -55,11 +55,11 @@ main = "src/server/index.ts"
 [[d1_databases]]
 binding = "DB"
 database_name = "firela-bot-data"
-database_id = "ae67cab3-392b-4f46-b783-9a8e32b6250f"
+database_id = "152e5c7f-90da-4256-b142-c6e36e3690f9"
 
 [[kv_namespaces]]
 binding = "CONFIG"
-id = "59865e1e3cb34909ade239a6423f7fec"
+id = "95ccdd7ead584b34ac9efb6c16131d37"
 `
 
 const BOT_TOML = `
@@ -78,9 +78,9 @@ id = "078b1d7583954002a50f5d7df2821555"
 
 const MOCK_UI_RESOURCES = {
   workerName: "firela-bot",
-  d1DatabaseId: "ae67cab3-392b-4f46-b783-9a8e32b6250f",
+  d1DatabaseId: "152e5c7f-90da-4256-b142-c6e36e3690f9",
   d1DatabaseName: "firela-bot-data",
-  kvNamespaceId: "59865e1e3cb34909ade239a6423f7fec",
+  kvNamespaceId: "95ccdd7ead584b34ac9efb6c16131d37",
   kvBindingName: "CONFIG",
 }
 
@@ -253,9 +253,9 @@ describe("uninstall command", () => {
 
       expect(urls.some((url) => url.includes("/workers/scripts/firela-bot"))).toBe(true)
       expect(urls.some((url) => url.includes("/workers/scripts/firela-bot"))).toBe(true)
-      expect(urls.some((url) => url.includes("/d1/database/ae67cab3"))).toBe(true)
+      expect(urls.some((url) => url.includes("/d1/database/152e5c7f-90da-4256-b142-c6e36e3690f9"))).toBe(true)
       expect(urls.some((url) => url.includes("/d1/database/575adfe2"))).toBe(true)
-      expect(urls.some((url) => url.includes("/storage/kv/namespaces/59865e1e"))).toBe(true)
+      expect(urls.some((url) => url.includes("/storage/kv/namespaces/95ccdd7ead584b34ac9efb6c16131d37"))).toBe(true)
       expect(urls.some((url) => url.includes("/storage/kv/namespaces/078b1d75"))).toBe(true)
     })
   })

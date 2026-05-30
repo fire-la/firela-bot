@@ -76,18 +76,18 @@ compatibility_date = "2025-09-15"
 [[d1_databases]]
 binding = "DB"
 database_name = "firela-bot-data"
-database_id = "ae67cab3-392b-4f46-b783-9a8e32b6250f"
+database_id = "152e5c7f-90da-4256-b142-c6e36e3690f9"
 
 [[kv_namespaces]]
 binding = "CONFIG"
-id = "59865e1e3cb34909ade239a6423f7fec"
+id = "95ccdd7ead584b34ac9efb6c16131d37"
 `
       const result = parseWranglerToml(uiToml)
 
       expect(result.workerName).toBe("firela-bot")
-      expect(result.d1DatabaseId).toBe("ae67cab3-392b-4f46-b783-9a8e32b6250f")
+      expect(result.d1DatabaseId).toBe("152e5c7f-90da-4256-b142-c6e36e3690f9")
       expect(result.d1DatabaseName).toBe("firela-bot-data")
-      expect(result.kvNamespaceId).toBe("59865e1e3cb34909ade239a6423f7fec")
+      expect(result.kvNamespaceId).toBe("95ccdd7ead584b34ac9efb6c16131d37")
       expect(result.kvBindingName).toBe("CONFIG")
     })
 
