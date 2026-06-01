@@ -354,7 +354,7 @@ export function VltPage() {
                   <Checkbox
                     id="filterPending"
                     checked={watch("filterPending")}
-                    onCheckedChange={(checked) => setValue("filterPending", checked)}
+                    onCheckedChange={(checked) => setValue("filterPending", checked === true)}
                   />
                   <Label htmlFor="filterPending" className="cursor-pointer">
                     Filter pending transactions

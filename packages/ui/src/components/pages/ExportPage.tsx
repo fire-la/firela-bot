@@ -321,7 +321,7 @@ export function ExportPage() {
               <Checkbox
                 id="includePending"
                 checked={watch("includePending")}
-                onCheckedChange={(checked) => setValue("includePending", checked)}
+                onCheckedChange={(checked) => setValue("includePending", checked === true)}
               />
               <Label htmlFor="includePending" className="font-normal cursor-pointer">
                 Include pending transactions
@@ -332,7 +332,7 @@ export function ExportPage() {
               <Checkbox
                 id="currencyColumn"
                 checked={watch("currencyColumn")}
-                onCheckedChange={(checked) => setValue("currencyColumn", checked)}
+                onCheckedChange={(checked) => setValue("currencyColumn", checked === true)}
               />
               <Label htmlFor="currencyColumn" className="font-normal cursor-pointer">
                 Add currency column
