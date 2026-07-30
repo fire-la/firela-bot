@@ -49,7 +49,7 @@ export async function getVltJwt(
     }
   }
 
-  const url = `${vlt.apiUrl}/${vlt.region}/auth/sessions/anonymous`
+  const url = `${vlt.apiUrl.replace(/\/+$/, "")}/${vlt.region}/auth/sessions/anonymous`
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -74,7 +74,13 @@ export async function getVltJwt(
       Date.now() + VLT_JWT_TTL_DAYS * 24 * 60 * 60 * 1000,
     ).toISOString(),
   }
-  await env.CONFIG.put(VLT_JWT_KV_KEY, JSON.stringify(cachedJwt))
+  // Cache write is best-effort: the token is valid for ~150d regardless, so a KV
+  // write failure should not fail the exchange (it just re-fetches next run).
+  try {
+    await env.CONFIG.put(VLT_JWT_KV_KEY, JSON.stringify(cachedJwt))
+  } catch (err) {
+    console.error("[vlt-auth] KV cache write failed (non-fatal):", err)
+  }
 
   return data.authToken
 }

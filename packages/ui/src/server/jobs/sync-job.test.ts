@@ -177,7 +177,7 @@ describe("runSyncJob", () => {
 
   it("one account fails, the other still syncs (Promise.all isolation)", async () => {
     mockSyncTransactions
-      .mockResolvedValueOnce({ added: [], modified: [], removed: [], next_cursor: "cA", has_more: false })
+      .mockResolvedValueOnce({ added: [{ transaction_id: "ta", amount: 1, date: "2026-07-30", name: "x" }], modified: [], removed: [], next_cursor: "cA", has_more: false })
       .mockResolvedValueOnce({ added: [{ transaction_id: "tb", amount: 2, date: "2026-07-30", name: "y" }], modified: [], removed: [], next_cursor: "cB", has_more: false })
     mockUploadTransactions
       .mockRejectedValueOnce(new Error("fail A"))
@@ -228,7 +228,7 @@ describe("runSyncJob", () => {
   })
 
   it("JWT is fetched once for multiple accounts", async () => {
-    mockSyncTransactions.mockResolvedValue({ added: [], modified: [], removed: [], next_cursor: "c", has_more: false })
+    mockSyncTransactions.mockResolvedValue({ added: [{ transaction_id: "t", amount: 1, date: "2026-07-30", name: "x" }], modified: [], removed: [], next_cursor: "c", has_more: false })
     const kv = makeKv({
       "billclaw:config": VLT_CONFIG,
       "billclaw:accounts": [plaidAccount("a"), plaidAccount("b"), plaidAccount("c")],
@@ -236,5 +236,18 @@ describe("runSyncJob", () => {
     await runSyncJob(envWith(kv))
     expect(mockGetVltJwt).toHaveBeenCalledTimes(1)
     expect(mockUploadTransactions).toHaveBeenCalledTimes(3)
+  })
+
+  it("skips the VLT upload when there are no new transactions (cursor still advances)", async () => {
+    mockSyncTransactions.mockResolvedValue({ added: [], modified: [], removed: [], next_cursor: "c-empty", has_more: false })
+    const kv = makeKv({
+      "billclaw:config": VLT_CONFIG,
+      "billclaw:accounts": [plaidAccount("a")],
+    })
+    await runSyncJob(envWith(kv))
+    expect(mockUploadTransactions).not.toHaveBeenCalled()
+    expect(kv._raw("billclaw:cursor:a")).toBe("c-empty")
+    const accounts = JSON.parse(kv._raw("billclaw:accounts")!) as Array<{ lastStatus: string }>
+    expect(accounts[0]!.lastStatus).toBe("ok")
   })
 })

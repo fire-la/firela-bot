@@ -104,39 +104,52 @@ plaidRoutes.post(
         console.log("[plaid_exchange] Session ID provided but relay mode does not use credential store:", sessionId)
       }
 
-      // Save account to KV storage for persistence
-      if (c.env.CONFIG) {
-        try {
-          // Get existing accounts
-          const existingAccounts = await c.env.CONFIG.get(ACCOUNTS_KEY, "json")
-          const accounts = Array.isArray(existingAccounts) ? existingAccounts : []
+      // Persist the account (incl. access token) so the scheduled sync job can
+      // read it. If KV is unavailable or the write fails, fail the request: the
+      // sync job cannot function without the persisted token, so returning
+      // success would silently break auto-sync.
+      if (!c.env.CONFIG) {
+        return c.json(
+          {
+            success: false,
+            error: "KV storage not configured; account could not be persisted",
+          },
+          500,
+        )
+      }
 
-          // Create new account entry (persist the access token for the sync job)
-          const newAccount = {
-            id: result.item_id,
-            name: `Plaid Account (${result.item_id.slice(0, 8)})`,
-            provider: "plaid",
-            type: "plaid",
-            status: "connected",
-            plaidAccessToken: result.access_token,
-            lastSync: new Date().toISOString(),
-          }
+      try {
+        const existingAccounts = await c.env.CONFIG.get(ACCOUNTS_KEY, "json")
+        const accounts = Array.isArray(existingAccounts) ? existingAccounts : []
 
-          // Check if account exists and update, or add new
-          const existingIndex = accounts.findIndex((a) => a.id === result.item_id)
-          if (existingIndex >= 0) {
-            accounts[existingIndex] = { ...accounts[existingIndex], ...newAccount }
-          } else {
-            accounts.push(newAccount)
-          }
-
-          // Save back to KV
-          await c.env.CONFIG.put(ACCOUNTS_KEY, JSON.stringify(accounts))
-          console.log("[plaid_exchange] Account saved to KV:", result.item_id)
-        } catch (kvError) {
-          // Log error but don't fail the request
-          console.error("[plaid_exchange] Failed to save account to KV:", kvError)
+        // Create new account entry (persist the access token for the sync job)
+        const newAccount = {
+          id: result.item_id,
+          name: `Plaid Account (${result.item_id.slice(0, 8)})`,
+          provider: "plaid",
+          type: "plaid",
+          status: "connected",
+          plaidAccessToken: result.access_token,
+          lastSync: new Date().toISOString(),
         }
+
+        // Check if account exists and update, or add new
+        const existingIndex = accounts.findIndex((a) => a.id === result.item_id)
+        if (existingIndex >= 0) {
+          accounts[existingIndex] = { ...accounts[existingIndex], ...newAccount }
+        } else {
+          accounts.push(newAccount)
+        }
+
+        // Save back to KV
+        await c.env.CONFIG.put(ACCOUNTS_KEY, JSON.stringify(accounts))
+        console.log("[plaid_exchange] Account saved to KV:", result.item_id)
+      } catch (kvError) {
+        console.error("[plaid_exchange] Failed to save account to KV:", kvError)
+        return c.json(
+          { success: false, error: "Failed to persist account" },
+          500,
+        )
       }
 
       return c.json({

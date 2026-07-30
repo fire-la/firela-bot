@@ -181,6 +181,9 @@ async function syncOneAccount(
 
     while (pages < MAX_PAGES) {
       const res = await client.syncTransactions(account.plaidAccessToken!, cursor)
+      // Append-only sync (ADR-009): `removed` txns are intentionally ignored —
+      // VLT is the ledger and dedupes by transaction_id; deletion propagation is
+      // out of scope (no VLT delete API wired here).
       collected.push(...((res.added ?? []) as RawPlaidTransaction[]))
       collected.push(...((res.modified ?? []) as RawPlaidTransaction[]))
       nextCursor = res.next_cursor ?? nextCursor
@@ -195,9 +198,13 @@ async function syncOneAccount(
 
     const uploadTxns = txns.map((t) => toPlaidUpload(t, account.id))
 
-    await uploadTransactions(vltConfig, uploadTxns, providerSyncConfig, console)
+    // Skip the VLT round-trip when there is nothing to upload (steady-state).
+    // When there IS data, uploadTransactions throwing aborts before the cursor
+    // put below — so the cursor advances only on success (or a no-op).
+    if (uploadTxns.length > 0) {
+      await uploadTransactions(vltConfig, uploadTxns, providerSyncConfig, console)
+    }
 
-    // Advance the cursor ONLY after a successful upload.
     await env.CONFIG.put(cursorKey(account.id), nextCursor)
 
     console.log(
