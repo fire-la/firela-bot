@@ -99,6 +99,47 @@ describe("transformToPlaidFormat", () => {
 
     expect(result.transaction_id).toBe("local-txn-1")
   })
+
+  it("uses externalAccountId for account_id when present (ADR-0113 #17)", () => {
+    const txn: Transaction = {
+      transactionId: "txn-1",
+      accountId: "acc-internal",
+      date: "2024-01-15",
+      amount: 1000,
+      currency: "USD",
+      category: [],
+      merchantName: "Test",
+      paymentChannel: "other",
+      pending: false,
+      plaidTransactionId: "plaid-1",
+      createdAt: "2024-01-15T10:00:00Z",
+      externalAccountId: "real-bank-acct",
+    }
+
+    const result = transformToPlaidFormat(txn)
+
+    expect(result.account_id).toBe("real-bank-acct")
+  })
+
+  it("falls back to internal accountId when externalAccountId is absent (backward compat)", () => {
+    const txn: Transaction = {
+      transactionId: "txn-1",
+      accountId: "acc-internal",
+      date: "2024-01-15",
+      amount: 1000,
+      currency: "USD",
+      category: [],
+      merchantName: "Test",
+      paymentChannel: "other",
+      pending: false,
+      plaidTransactionId: "plaid-1",
+      createdAt: "2024-01-15T10:00:00Z",
+    }
+
+    const result = transformToPlaidFormat(txn)
+
+    expect(result.account_id).toBe("acc-internal")
+  })
 })
 
 describe("transformTransactionsToPlaidFormat", () => {

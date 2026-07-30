@@ -73,6 +73,7 @@ export function createPlaidClient(config: PlaidConfig): PlaidApi {
 export function convertTransaction(
   plaidTxn: any,
   accountId: string,
+  externalAccountId?: string,
 ): Transaction {
   return {
     transactionId: `${accountId}_${plaidTxn.transaction_id}`,
@@ -86,6 +87,7 @@ export function convertTransaction(
     pending: plaidTxn.pending,
     plaidTransactionId: plaidTxn.transaction_id,
     createdAt: new Date().toISOString(),
+    externalAccountId,
   }
 }
 
@@ -236,8 +238,8 @@ export async function syncPlaidAccount(
     // Convert both added AND modified transactions
     // Modified transactions are pending->posted transitions that need to be updated
     const transactions: Transaction[] = [
-      ...allAdded.map((txn) => convertTransaction(txn, account.id)),
-      ...allModified.map((txn) => convertTransaction(txn, account.id)),
+      ...allAdded.map((txn) => convertTransaction(txn, account.id, txn.account_id)),
+      ...allModified.map((txn) => convertTransaction(txn, account.id, txn.account_id)),
     ]
 
     // Deduplicate transactions (24h window)

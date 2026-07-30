@@ -73,4 +73,32 @@ describe("convertGoCardlessTransaction", () => {
 
     expect(result.amount).toBe(0)
   })
+
+  it("passes externalAccountId through when provided (ADR-0113 #17)", () => {
+    const gcTxn: GoCardlessTransaction = {
+      transactionId: "gc-txn-5",
+      bookingDate: "2026-03-19",
+      valueDate: "2026-03-19",
+      transactionAmount: { amount: "-10.00", currency: "EUR" },
+      remittanceInformationUnstructured: "ATM",
+    }
+
+    const result = convertGoCardlessTransaction(gcTxn, accountId, false, "gc-bank-uuid")
+
+    expect(result.externalAccountId).toBe("gc-bank-uuid")
+  })
+
+  it("leaves externalAccountId undefined when not provided (backward compat)", () => {
+    const gcTxn: GoCardlessTransaction = {
+      transactionId: "gc-txn-6",
+      bookingDate: "2026-03-20",
+      valueDate: "2026-03-20",
+      transactionAmount: { amount: "-5.00", currency: "EUR" },
+      remittanceInformationUnstructured: "COFFEE",
+    }
+
+    const result = convertGoCardlessTransaction(gcTxn, accountId, false)
+
+    expect(result.externalAccountId).toBeUndefined()
+  })
 })

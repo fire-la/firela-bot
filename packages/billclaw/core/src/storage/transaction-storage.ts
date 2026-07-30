@@ -19,6 +19,8 @@ export interface Transaction {
   pending: boolean
   plaidTransactionId: string
   createdAt: string // ISO timestamp
+  /** Provider's real account_id (Plaid txn.account_id / GoCardless gcAccount.id). Passed through to vlt for multi-account routing (ADR-0113 #17). Undefined for legacy/internal-only data. */
+  externalAccountId?: string
 }
 
 /**

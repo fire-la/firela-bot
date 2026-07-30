@@ -373,8 +373,8 @@ export class Billclaw {
 
       // Convert both added AND modified transactions
       const transactions: Transaction[] = [
-        ...allAdded.map((txn) => convertTransaction(txn, account.id)),
-        ...allModified.map((txn) => convertTransaction(txn, account.id)),
+        ...allAdded.map((txn) => convertTransaction(txn, account.id, txn.account_id)),
+        ...allModified.map((txn) => convertTransaction(txn, account.id, txn.account_id)),
       ]
 
       // Deduplicate transactions (24h window)
@@ -777,12 +777,12 @@ export class Billclaw {
 
         // Convert booked transactions
         for (const txn of response.transactions.booked) {
-          allTransactions.push(convertGoCardlessTransaction(txn, account.id, false))
+          allTransactions.push(convertGoCardlessTransaction(txn, account.id, false, gcAccount.id))
         }
 
         // Convert pending transactions
         for (const txn of response.transactions.pending) {
-          allTransactions.push(convertGoCardlessTransaction(txn, account.id, true))
+          allTransactions.push(convertGoCardlessTransaction(txn, account.id, true, gcAccount.id))
         }
       }
 

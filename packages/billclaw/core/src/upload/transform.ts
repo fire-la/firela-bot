@@ -28,7 +28,9 @@ export function transformToPlaidFormat(txn: Transaction): PlaidTransactionUpload
     merchant_name: txn.merchantName,
     name: txn.merchantName,
     pending: txn.pending,
-    account_id: txn.accountId,
+    // Prefer the provider's real account_id (ADR-0113 #17 multi-account routing);
+    // fall back to the internal accountId for legacy data without externalAccountId.
+    account_id: txn.externalAccountId ?? txn.accountId,
     category: txn.category.length > 0 ? txn.category : undefined,
     payment_channel: txn.paymentChannel,
   }

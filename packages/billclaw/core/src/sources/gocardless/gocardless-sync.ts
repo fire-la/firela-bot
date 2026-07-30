@@ -26,6 +26,7 @@ export function convertGoCardlessTransaction(
   gcTxn: GoCardlessTransaction,
   accountId: string,
   isPending: boolean = false,
+  externalAccountId?: string,
 ): Transaction {
   return {
     transactionId: `${accountId}_${gcTxn.transactionId}`,
@@ -39,5 +40,6 @@ export function convertGoCardlessTransaction(
     pending: isPending,
     plaidTransactionId: gcTxn.transactionId,
     createdAt: new Date().toISOString(),
+    externalAccountId,
   }
 }
