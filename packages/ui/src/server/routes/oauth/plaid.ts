@@ -14,38 +14,14 @@
 import { Hono } from "hono"
 import { z } from "zod"
 import { zValidator } from "@hono/zod-validator"
-import { RelayPlaidClient } from "@firela/billclaw-core"
 
-import { DEFAULT_RELAY_URL } from "../../constants.js"
-import { getRelayApiKey } from "../../lib/relay-helpers.js"
+import { getPlaidRelayClient } from "../../lib/plaid-relay.js"
 import type { OAuthEnv as Env } from "./env.js"
 
 // KV key for accounts storage (same as accounts.ts)
 const ACCOUNTS_KEY = "billclaw:accounts"
 
 export const plaidRoutes = new Hono<{ Bindings: Env }>()
-
-/**
- * Create a RelayPlaidClient from environment bindings or KV-stored key.
- *
- * Validates that relay API key is available (env var or KV) before
- * creating the client instance.
- *
- * @throws Error if relay API key is not configured
- */
-async function getPlaidRelayClient(env: Env): Promise<RelayPlaidClient> {
-  const apiKey = await getRelayApiKey(env)
-  if (!apiKey) {
-    throw new Error(
-      "Relay API key not configured. Set it in Settings.",
-    )
-  }
-
-  return new RelayPlaidClient(
-    { relayUrl: env.FIRELA_RELAY_URL || DEFAULT_RELAY_URL, relayApiKey: apiKey },
-    console,
-  )
-}
 
 /**
  * Request validation schemas
@@ -108,8 +84,10 @@ plaidRoutes.get("/link-token", async (c) => {
  *
  * Response:
  * - success: boolean
- * - accessToken: string - Plaid access token
  * - itemId: string - Plaid item ID
+ *
+ * The Plaid access token is persisted to KV (billclaw:accounts) for the
+ * scheduled sync job and is NOT returned to the client.
  */
 plaidRoutes.post(
   "/exchange",
@@ -133,12 +111,14 @@ plaidRoutes.post(
           const existingAccounts = await c.env.CONFIG.get(ACCOUNTS_KEY, "json")
           const accounts = Array.isArray(existingAccounts) ? existingAccounts : []
 
-          // Create new account entry
+          // Create new account entry (persist the access token for the sync job)
           const newAccount = {
             id: result.item_id,
             name: `Plaid Account (${result.item_id.slice(0, 8)})`,
             provider: "plaid",
+            type: "plaid",
             status: "connected",
+            plaidAccessToken: result.access_token,
             lastSync: new Date().toISOString(),
           }
 
@@ -161,7 +141,6 @@ plaidRoutes.post(
 
       return c.json({
         success: true,
-        accessToken: result.access_token,
         itemId: result.item_id,
       })
     } catch (error) {

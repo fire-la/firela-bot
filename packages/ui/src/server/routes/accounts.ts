@@ -23,10 +23,22 @@ interface Account {
   id: string
   name: string
   provider: string
+  type?: string
   status?: string // Connection status: 'connected' | 'disconnected' | 'error'
   enabled?: boolean
+  plaidAccessToken?: string // persisted for the sync job; never returned to clients
   lastSync?: string
   lastStatus?: string
+}
+
+/**
+ * Strip the Plaid access token before returning an account to a client.
+ * Mirrors the masking in routes/config.ts.
+ */
+function maskAccount(account: Account): Omit<Account, "plaidAccessToken"> {
+  const rest = { ...account }
+  delete rest.plaidAccessToken
+  return rest
 }
 
 // Validation schema for update request body
@@ -110,7 +122,7 @@ accountsRoutes.put(
 
       return c.json({
         success: true,
-        data: accounts[accountIndex],
+        data: maskAccount(accounts[accountIndex]),
         message: `Account ${accountId} ${enabled ? "enabled" : "disabled"} successfully`,
       })
     } catch (error) {
@@ -158,7 +170,7 @@ accountsRoutes.get("/", async (c) => {
 
     return c.json({
       success: true,
-      data: accounts,
+      data: accounts.map(maskAccount),
     })
   } catch (error) {
     console.error("Error listing accounts:", error)

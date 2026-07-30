@@ -56,3 +56,7 @@ keytar = "./src/server/shims/keytar.ts"
 # routes = [
 #   { pattern = "billclaw.example.com/*", zone_name = "example.com" }
 # ]
+
+# Scheduled Plaid -> VLT sync (Phase 39 / ADR-009). Every 6h, off-minute.
+[triggers]
+crons = ["7 */6 * * *"]

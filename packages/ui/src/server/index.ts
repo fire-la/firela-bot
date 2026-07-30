@@ -201,7 +201,21 @@ app.onError((err, c) => {
 })
 
 /**
- * export the Hono app for Cloudflare Workers runtime
+ * Cloudflare Workers entrypoint.
+ *
+ * `fetch` serves the Hono app; `scheduled` runs the Plaid -> VLT sync job on the
+ * cron defined in wrangler.toml. The sync job is imported dynamically so it stays
+ * out of the fetch-path module graph.
  */
-export default app
+export default {
+  fetch: app.fetch,
+  async scheduled(
+    _controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    ctx.waitUntil((await import("./jobs/sync-job.js")).runSyncJob(env))
+  },
+}
+
 export type AppType = typeof app
