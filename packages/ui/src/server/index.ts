@@ -119,6 +119,11 @@ app.route("/api/services", serviceRoutes)
 import { syncRoutes } from "./routes/sync.js"
 app.route("/api/sync", syncRoutes)
 
+// Pairing routes (ADR-009 PR-3) — /redeem is public via PUBLIC_PATHS in
+// authMiddleware; /issue + /revoke are owner-only (not in APP_ROLE_ALLOWLIST).
+import { pairRoutes } from "./routes/pair.js"
+app.route("/api/pair", pairRoutes)
+
 // Accounts routes (Plan 13.3.3-02)
 import { accountsRoutes } from "./routes/accounts.js"
 app.route("/api/accounts", accountsRoutes)

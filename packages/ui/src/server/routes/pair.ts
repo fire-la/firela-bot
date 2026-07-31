@@ -1,0 +1,158 @@
+/**
+ * Pairing API Routes (Plex-style claim pairing — ADR-009 PR-3)
+ *
+ * Lets the firela-app mobile client obtain a long-lived app JWT (`role: "app"`)
+ * without the setup password. Reuses the ADR-008 HS256 + KV auth infra.
+ *
+ *   POST /api/pair/issue    (owner)   mint a single-use 8-char claim code (10m TTL)
+ *   POST /api/pair/redeem   (public)  validate the claim, sign an app JWT, store
+ *                                     the pairing/revocation record
+ *   POST /api/pair/revoke   (owner)   mark a paired app revoked
+ *
+ * `/redeem` is public (the claim code IS the auth); `/issue` + `/revoke` are
+ * owner-only — enforced centrally by `authMiddleware`'s app-role default-deny
+ * (neither is in `APP_ROLE_ALLOWLIST`).
+ *
+ * @packageDocumentation
+ */
+
+import { Hono } from "hono"
+import { z } from "zod"
+import { zValidator } from "@hono/zod-validator"
+import type { Env } from "../index.js"
+import {
+  PAIR_APP_PREFIX,
+  PAIR_APP_TTL_SEC,
+  PAIR_CLAIM_PREFIX,
+  PAIR_CLAIM_TTL_SEC,
+} from "../constants.js"
+import {
+  generateClaimCode,
+  normalizeClaimCode,
+  signAppToken,
+} from "../lib/pair-helpers.js"
+
+export const pairRoutes = new Hono<{ Bindings: Env }>()
+
+const redeemSchema = z.object({
+  claimCode: z.string().min(1, "claimCode is required"),
+  appId: z.string().min(1, "appId is required"),
+})
+
+const revokeSchema = z.object({
+  appId: z.string().min(1, "appId is required"),
+})
+
+function nowSec(): number {
+  return Math.floor(Date.now() / 1000)
+}
+
+/**
+ * POST /api/pair/issue (owner)
+ *
+ * Mint a single-use claim code. Owner-only (not app-allowlisted).
+ */
+pairRoutes.post("/issue", async (c) => {
+  const code = generateClaimCode()
+  const createdAt = nowSec()
+  await c.env.CONFIG.put(
+    PAIR_CLAIM_PREFIX + code,
+    JSON.stringify({ status: "pending", createdAt }),
+    { expirationTtl: PAIR_CLAIM_TTL_SEC },
+  )
+  return c.json({
+    success: true,
+    claimCode: code,
+    workerUrl: new URL(c.req.url).origin,
+    expiresAt: createdAt + PAIR_CLAIM_TTL_SEC,
+  })
+})
+
+/**
+ * POST /api/pair/redeem (public — claim code is the auth)
+ *
+ * Validate the claim, mark it used (TTL re-applied so it does not become a
+ * permanent KV entry), sign an app JWT, and write the pairing/revocation record
+ * with its D2 TTL-on-entry.
+ */
+pairRoutes.post("/redeem", zValidator("json", redeemSchema), async (c) => {
+  const { claimCode: rawCode, appId } = c.req.valid("json")
+  const code = normalizeClaimCode(rawCode)
+  const claimKey = PAIR_CLAIM_PREFIX + code
+
+  const claim = (await c.env.CONFIG.get(claimKey, "json")) as
+    | { status?: string }
+    | null
+  if (!claim) {
+    return c.json(
+      {
+        success: false,
+        error: "Claim code not found or expired",
+        errorCode: "CLAIM_NOT_FOUND",
+      },
+      404,
+    )
+  }
+  if (claim.status !== "pending") {
+    return c.json(
+      {
+        success: false,
+        error: "Claim code already used",
+        errorCode: "CLAIM_ALREADY_USED",
+      },
+      409,
+    )
+  }
+
+  // Mark used — MUST re-pass expirationTtl: a KV put without it makes the key
+  // permanent, leaking every claim ever issued (kept short per the single-use design).
+  await c.env.CONFIG.put(
+    claimKey,
+    JSON.stringify({ status: "used", appId }),
+    { expirationTtl: PAIR_CLAIM_TTL_SEC },
+  )
+
+  const pairingToken = await signAppToken(c.env, appId)
+  await c.env.CONFIG.put(
+    PAIR_APP_PREFIX + appId,
+    JSON.stringify({ appId, pairedAt: nowSec(), revoked: false }),
+    { expirationTtl: PAIR_APP_TTL_SEC },
+  )
+
+  return c.json({
+    success: true,
+    pairingToken,
+    workerUrl: new URL(c.req.url).origin,
+  })
+})
+
+/**
+ * POST /api/pair/revoke (owner)
+ *
+ * Mark a paired app revoked. Re-puts with the same TTL so the record still
+ * self-prunes ~max-token-age later (a bare put would make it permanent).
+ */
+pairRoutes.post("/revoke", zValidator("json", revokeSchema), async (c) => {
+  const { appId } = c.req.valid("json")
+  const key = PAIR_APP_PREFIX + appId
+
+  const rec = (await c.env.CONFIG.get(key, "json")) as
+    | { appId?: string; pairedAt?: number; revoked?: boolean }
+    | null
+  if (!rec) {
+    return c.json(
+      { success: false, error: "App is not paired", errorCode: "APP_NOT_PAIRED" },
+      404,
+    )
+  }
+
+  await c.env.CONFIG.put(
+    key,
+    JSON.stringify({ ...rec, appId, revoked: true }),
+    { expirationTtl: PAIR_APP_TTL_SEC },
+  )
+
+  return c.json({ success: true })
+})
+
+export default pairRoutes

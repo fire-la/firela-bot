@@ -11,28 +11,50 @@
 
 import { createMiddleware } from "hono/factory"
 import { ensureAuthSecret } from "../lib/auth-helpers.js"
+import { APP_ROLE_ALLOWLIST, PAIR_APP_PREFIX } from "../constants.js"
 import type { Env } from "../index.js"
 
 /**
- * Paths that should be excluded from JWT authentication
+ * Paths excluded from JWT authentication.
+ *
+ * Matched as exact OR exact+"/" (never bare `startsWith`) so that adding
+ * "/api/pair/redeem" here cannot accidentally expose "/api/pair/redeemXXX".
+ * Mirrors the safe pattern in middleware/service-toggle.ts. Hono collapses ".."
+ * in `c.req.path` before middleware runs, so traversal is not a bypass here.
  */
 const PUBLIC_PATHS = [
   "/health",
   "/auth", // Auth routes (including /auth/setup)
   "/webhook", // Webhook routes (use HMAC verification)
+  "/api/pair/redeem", // Public pairing redemption (the claim code is the auth)
 ]
 
 /**
- * Check if a path should be excluded from JWT authentication
+ * Check if a path is public (excluded from JWT auth).
  *
- * Uses exact match for "/" and prefix match for other paths.
- * Previously used startsWith for all paths, which caused "/"
- * to match every request (since all paths start with "/").
+ * "/" matches exactly; other entries match exactly or as a "dir/" prefix
+ * (so "/auth" covers "/auth/setup" but not "/authentication").
  */
 function isPublicPath(path: string): boolean {
-  // Exact match for root path
   if (path === "/") return true
-  return PUBLIC_PATHS.some((publicPath) => path.startsWith(publicPath))
+  return PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + "/"))
+}
+
+/**
+ * Normalize a path for app-role allowlist comparison: strip one trailing "/"
+ * (except root). Deliberately NOT lowercased — Hono route matching is
+ * case-sensitive, and odd variants (//, %2f) already 404 at the route layer.
+ */
+function normalizePath(path: string): string {
+  if (path.length > 1 && path.endsWith("/")) return path.slice(0, -1)
+  return path
+}
+
+/**
+ * Whether an `app`-role token may reach `path` (exact match only).
+ */
+function isAppPathAllowed(path: string): boolean {
+  return APP_ROLE_ALLOWLIST.some((allowed) => path === allowed)
 }
 
 /**
@@ -147,10 +169,84 @@ export const authMiddleware = createMiddleware<{ Bindings: Env }>(
       )
     }
 
-    // Store payload in context for route handlers
-    c.set("jwtPayload", payload)
+    // --- Role-based authorization -----------------------------------------
+    // Today every valid JWT had full access and `isOwner()` was dead code. PR-3
+    // makes role enforcement real and fail-closed.
+    const role = payload.role as string | undefined
 
-    return next()
+    if (role === "owner") {
+      // Owner: full access, unchanged. (No revocation KV read for owners.)
+      c.set("jwtPayload", payload)
+      return next()
+    }
+
+    if (role === "app") {
+      // App tokens may reach ONLY the allowlist. Check the path BEFORE any KV
+      // read so a denied request performs zero KV operations.
+      if (!isAppPathAllowed(normalizePath(path))) {
+        return c.json(
+          {
+            success: false,
+            error: "App role is not permitted to access this path",
+            errorCode: "APP_ROLE_PATH_DENIED",
+          },
+          403,
+        )
+      }
+
+      // Revocation check (D2, fail-closed). A KV GET on a missing key returns
+      // null (not a throw); a throw implies infra failure -> deny, never pass.
+      let rec: { revoked?: boolean } | null
+      try {
+        rec = await c.env.CONFIG.get(
+          PAIR_APP_PREFIX + (payload.sub as string),
+          "json",
+        )
+      } catch {
+        return c.json(
+          {
+            success: false,
+            error: "Revocation check failed",
+            errorCode: "AUTH_REVOCATION_CHECK_FAILED",
+          },
+          401,
+        )
+      }
+
+      if (rec === null) {
+        return c.json(
+          {
+            success: false,
+            error: "App is not paired",
+            errorCode: "APP_NOT_PAIRED",
+          },
+          401,
+        )
+      }
+      if (rec.revoked === true) {
+        return c.json(
+          {
+            success: false,
+            error: "Token has been revoked",
+            errorCode: "AUTH_REVOKED",
+          },
+          401,
+        )
+      }
+
+      c.set("jwtPayload", payload)
+      return next()
+    }
+
+    // Unknown or missing role: deny (fail-closed) even with a valid signature.
+    return c.json(
+      {
+        success: false,
+        error: "Invalid or missing role in token",
+        errorCode: "AUTH_INVALID_ROLE",
+      },
+      403,
+    )
   },
 )
 
