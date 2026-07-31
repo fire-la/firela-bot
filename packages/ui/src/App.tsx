@@ -21,6 +21,7 @@ import { AuthSetupPage } from "@/components/pages/AuthSetupPage"
 import { PlaidConnectPage } from "@/components/pages/PlaidConnectPage"
 import { GmailConnectPage } from "@/components/pages/GmailConnectPage"
 import { GoCardlessConnectPage } from "@/components/pages/GoCardlessConnectPage"
+import { isOwnerUser } from "@/lib/auth"
 
 /**
  * BillClaw sidebar menu configuration
@@ -49,7 +50,27 @@ const billclawMenuItems = [
   },
 ]
 
+/** Nav item keys whose API calls 403 under an app token (dead-end affordances). */
+const OWNER_ONLY_NAV_KEYS = new Set(["connect", "export", "vlt", "webhooks", "settings"])
+
+/**
+ * Sidebar menu filtered by role. The `app` role (firela-app WebView) can only
+ * use Sync, so owner-only sections are hidden to avoid buttons that 403 on click.
+ */
+function menuItemsForRole() {
+  if (isOwnerUser()) return billclawMenuItems
+  return billclawMenuItems
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((it) => !OWNER_ONLY_NAV_KEYS.has(it.itemKey)),
+    }))
+    .filter((section) => section.items.length > 0)
+}
+
 export function App() {
+  // App-role tokens can only reach Sync; hide owner-only nav so the WebView
+  // dashboard shows no dead-end buttons.
+  const menuItems = menuItemsForRole()
   return (
     <BrowserRouter>
       <ThemeProvider>
@@ -60,7 +81,7 @@ export function App() {
             path="/"
             element={
               <ProtectedRoute serviceId="billclaw">
-                <PageLayout menuItems={billclawMenuItems} systemName="connect" logo={getLogo()}>
+                <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
                   <HomePage />
                 </PageLayout>
               </ProtectedRoute>
@@ -70,7 +91,7 @@ export function App() {
             path="/connect"
             element={
               <ProtectedRoute serviceId="billclaw">
-                <PageLayout menuItems={billclawMenuItems} systemName="connect" logo={getLogo()}>
+                <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
                   <ConnectPage />
                 </PageLayout>
               </ProtectedRoute>
@@ -80,7 +101,7 @@ export function App() {
             path="/sync"
             element={
               <ProtectedRoute serviceId="billclaw">
-                <PageLayout menuItems={billclawMenuItems} systemName="connect" logo={getLogo()}>
+                <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
                   <SyncPage />
                 </PageLayout>
               </ProtectedRoute>
@@ -90,7 +111,7 @@ export function App() {
             path="/export"
             element={
               <ProtectedRoute serviceId="billclaw">
-                <PageLayout menuItems={billclawMenuItems} systemName="connect" logo={getLogo()}>
+                <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
                   <ExportPage />
                 </PageLayout>
               </ProtectedRoute>
@@ -100,7 +121,7 @@ export function App() {
             path="/vlt"
             element={
               <ProtectedRoute serviceId="billclaw">
-                <PageLayout menuItems={billclawMenuItems} systemName="connect" logo={getLogo()}>
+                <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
                   <VltPage />
                 </PageLayout>
               </ProtectedRoute>
@@ -110,7 +131,7 @@ export function App() {
             path="/webhooks"
             element={
               <ProtectedRoute serviceId="billclaw">
-                <PageLayout menuItems={billclawMenuItems} systemName="connect" logo={getLogo()}>
+                <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
                   <WebhooksPage />
                 </PageLayout>
               </ProtectedRoute>
@@ -120,7 +141,7 @@ export function App() {
             path="/settings"
             element={
               <ProtectedRoute serviceId="billclaw">
-                <PageLayout menuItems={billclawMenuItems} systemName="connect" logo={getLogo()}>
+                <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
                   <SettingsPage />
                 </PageLayout>
               </ProtectedRoute>

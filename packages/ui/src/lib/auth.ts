@@ -28,6 +28,34 @@ export function clearToken(): void {
 }
 
 /**
+ * Read the role from the stored JWT payload.
+ *
+ * Client-side decode ONLY — NOT a signature check. The server enforces the real
+ * signed role; this is purely to hide owner-only affordances (bank-connect,
+ * cloudflare, password) so the dashboard rendered in the firela-app WebView
+ * under an `app` token shows no dead-end buttons that would 403 on click.
+ */
+export function getRole(): "owner" | "app" | null {
+  const token = getToken()
+  if (!token) return null
+  try {
+    const payloadB64 = token.split(".")[1]!
+    const payload = JSON.parse(atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/")))
+    return (payload?.role as "owner" | "app") ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Whether the current token is the owner (full dashboard). The app role hides
+ * destructive affordances to avoid dead-ends.
+ */
+export function isOwnerUser(): boolean {
+  return getRole() === "owner"
+}
+
+/**
  * Authenticated fetch wrapper
  *
  * Adds Authorization header if token is available.
