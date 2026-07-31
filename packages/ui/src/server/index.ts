@@ -47,10 +47,10 @@ const app = new Hono<{ Bindings: Env }>()
 // Request logging
 app.use("*", logger())
 
-// CORS - allows frontend to make API requests
+// CORS - reflect requesting origin so credentials work on any user domain
 app.use(
   cors({
-    origin: "*",
+    origin: (origin) => origin ?? "*",
     allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     credentials: true,
   }),
@@ -80,32 +80,38 @@ app.route("/auth", authRoutes)
 import { webhookRoutes } from "./routes/webhooks.js"
 app.route("/webhook", webhookRoutes)
 
-// Relay routes (health check needed before login for Gmail relay-only flow)
+// ============================================================================
+// Protected Routes (JWT authentication required)
+// ============================================================================
+
+// Apply JWT auth + service-toggle to ALL /api/* routes BEFORE the mounts below.
+// Hono middleware only wraps routes registered AFTER it, so every /api/* mount
+// (including oauth/connect/relay) must come after these. Previously
+// oauth/connect/relay were mounted above this line and ran UNGATED — a public
+// credential-mint exposure (POST /api/oauth/plaid/exchange persisted a Plaid
+// token with no auth); PR-4 moves them behind auth.
+//   - /api/relay/health stays public via PUBLIC_PATHS (pre-login probe).
+//   - /api/pair/redeem stays public via PUBLIC_PATHS (claim code is the auth).
+app.use("/api/*", authMiddleware)
+app.use("/api/*", serviceToggleMiddleware())
+
+// ============================================================================
+// API Routes
+// ============================================================================
+
+// Relay routes — /health is public (PUBLIC_PATHS); /connect/* is auth-gated.
 import { relayRoutes } from "./routes/relay.js"
 app.route("/api/relay", relayRoutes)
 
-// OAuth routes (accessible without JWT for OAuth callback flows)
+// OAuth/connect routes — now auth-gated. Bank-connect credential-mint paths
+// (POST /api/oauth/plaid/exchange, POST /api/connect/*) are owner-only — denied
+// to the app role by APP_ROLE_ALLOWLIST (method+path).
 import plaidRoutes from "./routes/oauth/plaid.js"
 import credentialsRoutes from "./routes/oauth/credentials.js"
 import { gocardlessRoutes } from "./routes/oauth/gocardless.js"
 app.route("/api/oauth/plaid", plaidRoutes)
 app.route("/api/connect", credentialsRoutes)
 app.route("/api/oauth/gocardless", gocardlessRoutes)
-
-// ============================================================================
-// Protected Routes (JWT authentication required)
-// ============================================================================
-
-// Apply JWT authentication middleware to all /api/* routes
-// Note: /api/relay/* and /api/oauth/* are registered above and skip this middleware
-app.use("/api/*", authMiddleware)
-
-// Apply service toggle middleware — blocks routes for disabled services (503)
-app.use("/api/*", serviceToggleMiddleware())
-
-// ============================================================================
-// API Routes
-// ============================================================================
 
 // Cache routes (statistics and management)
 import { cacheRoutes } from "./routes/cache.js"

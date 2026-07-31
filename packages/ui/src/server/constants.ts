@@ -50,8 +50,24 @@ export const PAIR_TOKEN_TTL_SEC = 365 * 24 * 60 * 60
 export const PAIR_APP_TTL_SEC = PAIR_TOKEN_TTL_SEC
 
 /**
- * Paths an `app`-role JWT may reach. Everything else under /api/* is denied to
- * app tokens with APP_ROLE_PATH_DENIED (see isAppPathAllowed in auth.ts). Owner
- * tokens are unaffected. Match with exact equality against the normalized path.
+ * Method+path tuples an `app`-role JWT may reach (exact match). Method-aware
+ * because path-based allowlisting is unsafe: `GET /api/config` (masked read)
+ * shares a path with `PUT /api/config` (owner write), and
+ * `POST /api/oauth/plaid/exchange` mints a bank credential into KV — a bare
+ * path allowlist would grant the destructive sibling of every read. Everything
+ * else under /api/* is denied to app tokens (APP_ROLE_PATH_DENIED). Owner tokens
+ * are unaffected. See isAppAllowed in middleware/auth.ts + ADR-009 D4 (amended:
+ * path -> method+path).
  */
-export const APP_ROLE_ALLOWLIST = ["/api/sync/run", "/api/sync/status"] as const
+export const APP_ROLE_ALLOWLIST = [
+  { method: "POST", path: "/api/sync/run" },
+  { method: "GET", path: "/api/sync/status" },
+  { method: "GET", path: "/api/accounts" },
+  { method: "GET", path: "/api/config" },
+  { method: "GET", path: "/api/system/status" },
+  { method: "GET", path: "/api/services" },
+  { method: "GET", path: "/api/settings/relay" },
+  { method: "GET", path: "/api/settings/cloudflare" },
+  { method: "GET", path: "/api/cloudflare/version" },
+  { method: "GET", path: "/api/cache/stats" },
+] as const

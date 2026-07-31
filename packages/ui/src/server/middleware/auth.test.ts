@@ -173,13 +173,22 @@ describe("authMiddleware role enforcement (PR-3)", () => {
   function roleApp() {
     const app = new Hono<{ Bindings: Env }>()
     app.use("/api/*", authMiddleware)
+    // allowlisted app reads + sync
     app.post("/api/sync/run", (c) => c.json({ ok: true }))
     app.get("/api/sync/status", (c) => c.json({ ok: true }))
-    app.get("/api/config", (c) => c.json({ ok: true }))
     app.get("/api/accounts", (c) => c.json({ ok: true }))
+    app.get("/api/config", (c) => c.json({ ok: true }))
     app.get("/api/services", (c) => c.json({ ok: true }))
-    app.get("/api/cache", (c) => c.json({ ok: true }))
-    app.get("/api/cloudflare", (c) => c.json({ ok: true }))
+    app.get("/api/cloudflare/version", (c) => c.json({ ok: true }))
+    // owner-only / credential-mint (app must be denied)
+    app.put("/api/config", (c) => c.json({ ok: true }))
+    app.put("/api/settings/password", (c) => c.json({ ok: true }))
+    app.get("/api/oauth/plaid/link-token", (c) => c.json({ ok: true }))
+    app.post("/api/oauth/plaid/exchange", (c) => c.json({ ok: true }))
+    app.post("/api/connect/session", (c) => c.json({ ok: true }))
+    app.post("/api/cloudflare/upgrade", (c) => c.json({ ok: true }))
+    // public
+    app.get("/api/relay/health", (c) => c.json({ ok: true }))
     app.post("/api/pair/redeem", (c) => c.json({ reached: true })) // public stub
     app.post("/api/pair/issue", (c) => c.json({ reached: true })) // protected stub
     return app
@@ -208,23 +217,42 @@ describe("authMiddleware role enforcement (PR-3)", () => {
     ).toBe(200)
   })
 
-  it("app token is denied on every other protected /api/* mount (403 APP_ROLE_PATH_DENIED)", async () => {
+  it("app token: allowlisted READs -> 200 (method-aware)", async () => {
     const kv = roleKv({ appId: "app-1" })
     const app = roleApp()
     const tok = await jwt({ sub: "app-1", role: "app" })
-    for (const path of [
-      "/api/config",
-      "/api/accounts",
-      "/api/services",
-      "/api/cache",
-      "/api/cloudflare",
-    ]) {
-      const res = await app.request(path, { headers: bearer(tok) }, envOf(kv))
-      expect(res.status).toBe(403)
-      expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
-        "APP_ROLE_PATH_DENIED",
-      )
+    for (const path of ["/api/config", "/api/accounts", "/api/services", "/api/cloudflare/version"]) {
+      expect((await app.request(path, { headers: bearer(tok) }, envOf(kv))).status).toBe(200)
     }
+  })
+
+  it("app token: method mismatch on a shared path -> 403 (GET /api/config ok, PUT denied)", async () => {
+    const kv = roleKv({ appId: "app-1" })
+    const app = roleApp()
+    const tok = await jwt({ sub: "app-1", role: "app" })
+    expect((await app.request("/api/config", { headers: bearer(tok) }, envOf(kv))).status).toBe(200)
+    const put = await app.request("/api/config", { method: "PUT", headers: bearer(tok) }, envOf(kv))
+    expect(put.status).toBe(403)
+    expect(((await put.json()) as { errorCode: string }).errorCode).toBe("APP_ROLE_PATH_DENIED")
+  })
+
+  it("app token: credential-mint + infra + connect-init denied (403, no dead-end)", async () => {
+    const kv = roleKv({ appId: "app-1" })
+    const app = roleApp()
+    const tok = await jwt({ sub: "app-1", role: "app" })
+    // GET init denied too — bank-connect is fully owner-only (no half-connected flow)
+    for (const path of ["/api/oauth/plaid/link-token", "/api/cache", "/api/cloudflare"]) {
+      expect((await app.request(path, { headers: bearer(tok) }, envOf(kv))).status).toBe(403)
+    }
+    for (const path of ["/api/oauth/plaid/exchange", "/api/connect/session", "/api/cloudflare/upgrade"]) {
+      expect(
+        (await app.request(path, { method: "POST", headers: bearer(tok) }, envOf(kv))).status,
+      ).toBe(403)
+    }
+    expect(
+      (await app.request("/api/settings/password", { method: "PUT", headers: bearer(tok) }, envOf(kv)))
+        .status,
+    ).toBe(403)
   })
 
   it("app token cannot bypass via prefix: /api/sync/runXXX is denied (403)", async () => {
@@ -313,6 +341,11 @@ describe("authMiddleware role enforcement (PR-3)", () => {
     const res = await roleApp().request("/api/pair/redeem", { method: "POST" }, envOf(roleKv()))
     expect(res.status).toBe(200)
     expect(((await res.json()) as { reached: boolean }).reached).toBe(true)
+  })
+
+  it("/api/relay/health is public (no token) -> 200 (pre-login probe)", async () => {
+    const res = await roleApp().request("/api/relay/health", {}, envOf(roleKv()))
+    expect(res.status).toBe(200)
   })
 
   it("/api/pair/redeemXXX is NOT public -> auth enforced (401, handler not leaked)", async () => {

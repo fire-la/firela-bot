@@ -27,6 +27,7 @@ const PUBLIC_PATHS = [
   "/auth", // Auth routes (including /auth/setup)
   "/webhook", // Webhook routes (use HMAC verification)
   "/api/pair/redeem", // Public pairing redemption (the claim code is the auth)
+  "/api/relay/health", // Pre-login relay probe (Gmail relay-only flow)
 ]
 
 /**
@@ -51,10 +52,12 @@ function normalizePath(path: string): string {
 }
 
 /**
- * Whether an `app`-role token may reach `path` (exact match only).
+ * Whether an `app`-role token may reach `(method, path)` (exact match only).
+ * Method-aware so a read path (GET /api/config) does not silently grant its
+ * destructive sibling (PUT /api/config). See APP_ROLE_ALLOWLIST.
  */
-function isAppPathAllowed(path: string): boolean {
-  return APP_ROLE_ALLOWLIST.some((allowed) => path === allowed)
+function isAppAllowed(method: string, path: string): boolean {
+  return APP_ROLE_ALLOWLIST.some((e) => e.method === method && e.path === path)
 }
 
 /**
@@ -181,9 +184,9 @@ export const authMiddleware = createMiddleware<{ Bindings: Env }>(
     }
 
     if (role === "app") {
-      // App tokens may reach ONLY the allowlist. Check the path BEFORE any KV
+      // App tokens may reach ONLY the method+path allowlist. Check BEFORE any KV
       // read so a denied request performs zero KV operations.
-      if (!isAppPathAllowed(normalizePath(path))) {
+      if (!isAppAllowed(c.req.method, normalizePath(path))) {
         return c.json(
           {
             success: false,
