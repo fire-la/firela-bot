@@ -152,19 +152,20 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claimCode, appId: "app-1" }),
+        body: JSON.stringify({ claimCode }),
       },
       env(kv),
     )
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { pairingToken: string; workerUrl: string }
+    const body = (await res.json()) as { pairingToken: string; appId: string; workerUrl: string }
     expect(body.pairingToken.split(".").length).toBe(3) // well-formed JWT
+    expect(body.appId).toMatch(/^[0-9a-f-]{36}$/) // server-generated UUID
 
     const used = JSON.parse(kv._raw(PAIR_CLAIM_PREFIX + claimCode)!)
     expect(used.status).toBe("used")
-    expect(used.appId).toBe("app-1")
-    const rec = JSON.parse(kv._raw(PAIR_APP_PREFIX + "app-1")!)
-    expect(rec).toMatchObject({ appId: "app-1", revoked: false })
+    expect(used.appId).toBe(body.appId)
+    const rec = JSON.parse(kv._raw(PAIR_APP_PREFIX + body.appId)!)
+    expect(rec).toMatchObject({ appId: body.appId, revoked: false })
   })
 
   it("redeemed token reaches the allowlisted sync routes", async () => {
@@ -177,7 +178,7 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claimCode, appId: "app-1" }),
+        body: JSON.stringify({ claimCode }),
       },
       env(kv),
     )
@@ -208,7 +209,7 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claimCode, appId: "app-1" }),
+        body: JSON.stringify({ claimCode }),
       },
       env(kv),
     )
@@ -219,7 +220,7 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claimCode, appId: "app-2" }),
+        body: JSON.stringify({ claimCode }),
       },
       env(kv),
     )
@@ -236,7 +237,7 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claimCode: "NOPE0000", appId: "app-1" }),
+        body: JSON.stringify({ claimCode: "NOPE0000" }),
       },
       env(kv),
     )
@@ -262,7 +263,7 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claimCode: mangled, appId: "app-1" }),
+        body: JSON.stringify({ claimCode: mangled }),
       },
       env(kv),
     )
@@ -281,18 +282,18 @@ describe("POST /api/pair/revoke (owner)", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claimCode, appId: "app-1" }),
+        body: JSON.stringify({ claimCode }),
       },
       env(kv),
     )
-    const { pairingToken } = (await redeem.json()) as { pairingToken: string }
+    const { pairingToken, appId } = (await redeem.json()) as { pairingToken: string; appId: string }
 
     const revoke = await app.request(
       "/api/pair/revoke",
       {
         method: "POST",
         headers: { Authorization: `Bearer ${owner}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ appId: "app-1" }),
+        body: JSON.stringify({ appId }),
       },
       env(kv),
     )
@@ -333,21 +334,22 @@ describe("TTL guarantees (Fix A/B)", () => {
     const app = pairApp()
     const owner = await makeToken(kv, "owner", "owner")
     const { claimCode } = await issue(app, kv, owner)
-    await app.request(
+    const redeem = await app.request(
       "/api/pair/redeem",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claimCode, appId: "app-1" }),
+        body: JSON.stringify({ claimCode }),
       },
       env(kv),
     )
+    const { appId } = (await redeem.json()) as { appId: string }
     await app.request(
       "/api/pair/revoke",
       {
         method: "POST",
         headers: { Authorization: `Bearer ${owner}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ appId: "app-1" }),
+        body: JSON.stringify({ appId }),
       },
       env(kv),
     )

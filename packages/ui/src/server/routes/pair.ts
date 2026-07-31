@@ -36,7 +36,6 @@ export const pairRoutes = new Hono<{ Bindings: Env }>()
 
 const redeemSchema = z.object({
   claimCode: z.string().min(1, "claimCode is required"),
-  appId: z.string().min(1, "appId is required"),
 })
 
 const revokeSchema = z.object({
@@ -76,7 +75,7 @@ pairRoutes.post("/issue", async (c) => {
  * with its D2 TTL-on-entry.
  */
 pairRoutes.post("/redeem", zValidator("json", redeemSchema), async (c) => {
-  const { claimCode: rawCode, appId } = c.req.valid("json")
+  const { claimCode: rawCode } = c.req.valid("json")
   const code = normalizeClaimCode(rawCode)
   const claimKey = PAIR_CLAIM_PREFIX + code
 
@@ -104,6 +103,12 @@ pairRoutes.post("/redeem", zValidator("json", redeemSchema), async (c) => {
     )
   }
 
+  // Server-generated appId: the caller must NOT name the revocation-record key.
+  // This is a public endpoint — a client-chosen appId could collide with an
+  // existing paired device and overwrite it (e.g. silently un-revoke). The id is
+  // returned so the app / a future owner list endpoint can reference it.
+  const appId = crypto.randomUUID()
+
   // Mark used — MUST re-pass expirationTtl: a KV put without it makes the key
   // permanent, leaking every claim ever issued (kept short per the single-use design).
   await c.env.CONFIG.put(
@@ -122,6 +127,7 @@ pairRoutes.post("/redeem", zValidator("json", redeemSchema), async (c) => {
   return c.json({
     success: true,
     pairingToken,
+    appId,
     workerUrl: new URL(c.req.url).origin,
   })
 })
