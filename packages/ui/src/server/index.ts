@@ -209,12 +209,19 @@ app.onError((err, c) => {
  */
 export default {
   fetch: app.fetch,
-  async scheduled(
+  scheduled(
     _controller: ScheduledController,
     env: Env,
     ctx: ExecutionContext,
-  ): Promise<void> {
-    ctx.waitUntil((await import("./jobs/sync-job.js")).runSyncJob(env))
+  ): void {
+    // Wrap BOTH the dynamic import and the job in waitUntil so a module-load
+    // failure or a top-level throw (e.g. getVltJwt / getPlaidRelayClient) is
+    // caught and logged, not an unhandled rejection that fails the invocation.
+    ctx.waitUntil(
+      import("./jobs/sync-job.js")
+        .then((mod) => mod.runSyncJob(env))
+        .catch((err) => console.error("[sync-job] fatal:", err)),
+    )
   },
 }
 
