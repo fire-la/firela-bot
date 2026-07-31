@@ -9,6 +9,7 @@
 
 import { Hono } from "hono"
 import type { Env } from "../index.js"
+import { runSyncJob } from "../jobs/sync-job.js"
 
 export const syncRoutes = new Hono<{ Bindings: Env }>()
 
@@ -95,4 +96,25 @@ syncRoutes.get("/status", async (c) => {
       500,
     )
   }
+})
+
+/**
+ * POST /api/sync/run
+ *
+ * Trigger a manual Plaid -> VLT sync (fire-and-forget). Same pipeline as the
+ * scheduled cron run (runSyncJob). Status is observable via GET /api/sync/status.
+ *
+ * Response:
+ * - success: boolean
+ * - message: string
+ */
+syncRoutes.post("/run", async (c) => {
+  const ctx = c.executionCtx
+  if (ctx) {
+    ctx.waitUntil(runSyncJob(c.env))
+  } else {
+    // No execution context (not a Workers fetch) — run inline.
+    await runSyncJob(c.env)
+  }
+  return c.json({ success: true, message: "sync started" })
 })
