@@ -56,6 +56,15 @@ export interface ProviderSyncConfig {
   defaultExpenseAccount: string
   defaultIncomeAccount: string
   filterPending?: boolean
+  /**
+   * External account ID for per-batch providers (ADR-0113 decision 4).
+   *
+   * Mirrors vlt's ProviderSyncConfig.externalAccountId for contract alignment.
+   * billclaw currently uploads in Plaid per-tx format (account_id carried on
+   * each transaction via transform.ts), so this field is reserved for future
+   * per-batch providers and is not consumed on the current path.
+   */
+  externalAccountId?: string
 }
 
 /**
@@ -142,6 +151,11 @@ export class VltClient {
         defaultExpenseAccount: syncConfig.defaultExpenseAccount,
         defaultIncomeAccount: syncConfig.defaultIncomeAccount,
         filterPending: syncConfig.filterPending ?? true,
+        // Forward per-batch external account id when provided (ADR-0113 #17).
+        // billclaw currently uploads per-tx, so this is usually absent.
+        ...(syncConfig.externalAccountId
+          ? { externalAccountId: syncConfig.externalAccountId }
+          : {}),
       },
       transactions,
     }

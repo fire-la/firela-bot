@@ -148,6 +148,67 @@ describe("VltClient", () => {
       }),
     )
   })
+
+  it("should forward externalAccountId to config when provided (ADR-0113 #17)", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ imported: 0, skipped: 0, pendingReview: 0, failed: 0 }),
+    })
+
+    await client.sync(
+      [
+        {
+          transaction_id: "txn-1",
+          amount: 1,
+          iso_currency_code: "USD",
+          date: "2024-01-01",
+          name: "T",
+          pending: false,
+          account_id: "acc-1",
+        },
+      ],
+      {
+        sourceAccount: "Assets:Bank",
+        defaultCurrency: "USD",
+        defaultExpenseAccount: "Expenses:Unknown",
+        defaultIncomeAccount: "Income:Unknown",
+        externalAccountId: "ext-acct-1",
+      },
+    )
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.config.externalAccountId).toBe("ext-acct-1")
+  })
+
+  it("should omit externalAccountId from config when not provided", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ imported: 0, skipped: 0, pendingReview: 0, failed: 0 }),
+    })
+
+    await client.sync(
+      [
+        {
+          transaction_id: "txn-1",
+          amount: 1,
+          iso_currency_code: "USD",
+          date: "2024-01-01",
+          name: "T",
+          pending: false,
+          account_id: "acc-1",
+        },
+      ],
+      {
+        sourceAccount: "Assets:Bank",
+        defaultCurrency: "USD",
+        defaultExpenseAccount: "Expenses:Unknown",
+        defaultIncomeAccount: "Income:Unknown",
+      },
+    )
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.config.externalAccountId).toBeUndefined()
+  })
 })
 
 describe("uploadTransactions", () => {
