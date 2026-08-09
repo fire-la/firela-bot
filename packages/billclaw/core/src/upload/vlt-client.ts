@@ -53,8 +53,16 @@ export interface PlaidTransactionUpload {
 export interface ProviderSyncConfig {
   sourceAccount: string
   defaultCurrency: string
-  defaultExpenseAccount: string
-  defaultIncomeAccount: string
+  /**
+   * Optional — omit when no real default exists; the pipeline routes to Review
+   * via the Uncategorized sentinel (vlt #618).
+   */
+  defaultExpenseAccount?: string
+  /**
+   * Optional — omit when no real default exists; the pipeline routes to Review
+   * via the Uncategorized sentinel (vlt #618).
+   */
+  defaultIncomeAccount?: string
   filterPending?: boolean
   /**
    * External account ID for per-batch providers (ADR-0113 decision 4).
