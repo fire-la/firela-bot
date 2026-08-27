@@ -12,6 +12,7 @@ import { RelayClient, maskApiKey } from "@firela/billclaw-core/relay"
 
 import { DEFAULT_RELAY_URL } from "../constants.js"
 import { getRelayApiKey } from "../lib/relay-helpers.js"
+import { isApp } from "../middleware/auth.js"
 import type { Env } from "../index.js"
 
 export const relayRoutes = new Hono<{ Bindings: Env }>()
@@ -193,6 +194,14 @@ relayRoutes.get("/connect/credentials/:sessionId", async (c) => {
     )
 
     const data = await relayRes.json() as Record<string, unknown>
+    // App-role callers get a bare completion signal: credential custody stays
+    // relay/Worker-side (ADR-009) — the native app polls for readiness and
+    // discards the body by design, so the credential payload is stripped
+    // rather than trusted to client discipline. Owner (SPA) keeps the proxy
+    // verbatim.
+    if (relayRes.ok && isApp(c)) {
+      return c.json({ success: data.success ?? true }, relayRes.status as 200)
+    }
     return c.json(data, relayRes.status as 200)
   } catch (error) {
     const message = error instanceof Error ? error.message : "Credential retrieval failed"

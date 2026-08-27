@@ -135,9 +135,11 @@ export function WebhooksPage() {
     try {
       setSaving(true)
 
-      // Build connect config update
+      // Build connect config update. publicUrl is explicitly nulled (not
+      // omitted) when not in direct mode — PUT /api/config deep-merges, so an
+      // omitted key would keep the previous value.
       const connectUpdate = {
-        publicUrl: formData.mode === "direct" ? formData.publicUrl : undefined,
+        publicUrl: formData.mode === "direct" ? formData.publicUrl : null,
         connection: {
           mode: formData.mode,
           healthCheck: {

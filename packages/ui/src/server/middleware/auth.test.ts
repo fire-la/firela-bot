@@ -189,11 +189,6 @@ describe("authMiddleware role enforcement (PR-3)", () => {
     app.delete("/api/accounts/:id", (c) => c.json({ ok: true }))
     app.post("/api/oauth/gocardless/requisitions/:id/status", (c) => c.json({ ok: true }))
     app.put("/api/config", (c) => c.json({ ok: true }))
-    app.post("/api/config/export/test", (c) => c.json({ ok: true }))
-    app.post("/api/config/vlt/test", (c) => c.json({ ok: true }))
-    app.post("/api/config/webhooks/test", (c) => c.json({ ok: true }))
-    app.get("/api/webhooks/health", (c) => c.json({ ok: true }))
-    app.put("/api/settings/relay", (c) => c.json({ ok: true }))
     // owner-only (app must be denied)
     app.put("/api/settings/password", (c) => c.json({ ok: true }))
     app.post("/api/cloudflare/upgrade", (c) => c.json({ ok: true }))
@@ -268,23 +263,27 @@ describe("authMiddleware role enforcement (PR-3)", () => {
     ).toBe(200)
   })
 
-  it("app token: config-form surface allowed (PUT config, tests, webhooks health, relay settings)", async () => {
+  it("app token: config write allowed (deep-merge PUT); dead + owner-only config paths denied", async () => {
     const kv = roleKv({ appId: "app-1" })
     const app = roleApp()
     const tok = await jwt({ sub: "app-1", role: "app" })
     expect(
       (await app.request("/api/config", { method: "PUT", headers: bearer(tok) }, envOf(kv))).status,
     ).toBe(200)
+    // Entries deliberately NOT in the allowlist: the config test endpoints
+    // (real routes mount at /api/{export,vlt,webhooks}/test — SPA diagnostics,
+    // no app consumer), webhooks health (no such /api route), and the relay
+    // API-key PUT (owner-configured credential write; the app reads masked).
     for (const p of ["/api/config/export/test", "/api/config/vlt/test", "/api/config/webhooks/test"]) {
-      expect((await app.request(p, { method: "POST", headers: bearer(tok) }, envOf(kv))).status).toBe(200)
+      expect((await app.request(p, { method: "POST", headers: bearer(tok) }, envOf(kv))).status).toBe(403)
     }
     expect(
       (await app.request("/api/webhooks/health", { headers: bearer(tok) }, envOf(kv))).status,
-    ).toBe(200)
+    ).toBe(403)
     expect(
       (await app.request("/api/settings/relay", { method: "PUT", headers: bearer(tok) }, envOf(kv)))
         .status,
-    ).toBe(200)
+    ).toBe(403)
   })
 
   it("app token: infra + password still owner-only (403, no dead-end)", async () => {

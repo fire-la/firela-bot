@@ -143,19 +143,23 @@ export function VltPage() {
       setSaving(true)
       const adapter = createAdapter()
 
-      // Transform form data to config structure
+      // Transform form data to config structure. The upload section is ALWAYS
+      // sent (mode: "disabled" instead of omission) — PUT /api/config
+      // deep-merges, so an omitted section would keep the previous value.
       const vltConfig = {
         apiUrl: data.apiUrl,
         accessToken: data.accessToken || undefined,
         region: data.region,
-        upload: data.uploadMode !== "disabled" ? {
-          mode: data.uploadMode as "auto" | "manual",
-          sourceAccount: data.sourceAccount || "",
-          defaultCurrency: data.defaultCurrency,
-          defaultExpenseAccount: data.defaultExpenseAccount,
-          defaultIncomeAccount: data.defaultIncomeAccount,
-          filterPending: data.filterPending,
-        } : undefined,
+        upload: {
+          mode: data.uploadMode,
+          ...(data.uploadMode !== "disabled" && {
+            sourceAccount: data.sourceAccount || "",
+            defaultCurrency: data.defaultCurrency,
+            defaultExpenseAccount: data.defaultExpenseAccount,
+            defaultIncomeAccount: data.defaultIncomeAccount,
+            filterPending: data.filterPending,
+          }),
+        },
       }
 
       await adapter.updateConfig({ vlt: vltConfig })

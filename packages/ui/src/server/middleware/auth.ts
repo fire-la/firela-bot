@@ -296,3 +296,15 @@ export function isOwner(c: {
   const payload = c.get("jwtPayload")
   return (payload?.role as string) === "owner"
 }
+
+/**
+ * Check if the caller holds the app role (the native client's pairing JWT —
+ * ADR-009). Surfaces that proxy sensitive payloads strip them for app
+ * callers (credential custody stays server-side).
+ */
+export function isApp(c: {
+  get: (key: string) => Record<string, unknown> | undefined
+}): boolean {
+  const payload = c.get("jwtPayload")
+  return (payload?.role as string) === "app"
+}

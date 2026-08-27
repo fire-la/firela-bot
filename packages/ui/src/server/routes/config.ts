@@ -114,8 +114,48 @@ configRoutes.get("/config", async (c) => {
 })
 
 /**
+ * Deep-merge a partial config update into the stored config, mask-aware:
+ * - a leaf string exactly "***" is SKIPPED (the masked GET prefills SPA forms;
+ *   echoing a mask back must never overwrite the live secret)
+ * - an explicit JSON null DELETES the key (the only deletion mechanism —
+ *   omitting a key preserves it)
+ * - arrays and other non-object leaves replace atomically (no index merge;
+ *   note the "***"-skip applies to OBJECT leaves only — no writer legitimately
+ *   PUTs credential-bearing arrays, which the server alone writes)
+ *
+ * Callers send only the subsection they edit; object sub-sections merge by
+ * key, so a key that must disappear is sent as null.
+ */
+function deepMergeConfig(existing: unknown, partial: unknown): unknown {
+  if (
+    partial === null ||
+    typeof partial !== "object" ||
+    Array.isArray(partial)
+  ) {
+    return partial
+  }
+  const base =
+    typeof existing === "object" && existing !== null && !Array.isArray(existing)
+      ? { ...(existing as Record<string, unknown>) }
+      : {}
+  for (const [key, value] of Object.entries(
+    partial as Record<string, unknown>,
+  )) {
+    if (value === null) {
+      delete base[key]
+      continue
+    }
+    if (value === "***") {
+      continue
+    }
+    base[key] = deepMergeConfig(base[key], value)
+  }
+  return base
+}
+
+/**
  * PUT /api/config
- * Updates the configuration
+ * Updates the configuration (deep-merge; see deepMergeConfig)
  */
 configRoutes.put(
   "/config",
@@ -133,7 +173,9 @@ configRoutes.put(
         )
       }
 
-      const config = c.req.valid("json")
+      const partial = c.req.valid("json")
+      const existing = await c.env.CONFIG.get(CONFIG_KEY, "json")
+      const config = deepMergeConfig(existing ?? {}, partial)
       await c.env.CONFIG.put(CONFIG_KEY, JSON.stringify(config))
       // Invalidate cache after write
       serverCache.delete(CacheKeys.config)
