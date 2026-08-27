@@ -70,4 +70,23 @@ export const APP_ROLE_ALLOWLIST = [
   { method: "GET", path: "/api/settings/cloudflare" },
   { method: "GET", path: "/api/cloudflare/version" },
   { method: "GET", path: "/api/cache/stats" },
+  // Native Flutter client (Phase 40, #19) — connect surface. Bank credentials
+  // are minted server-side into KV; the app only submits one-time public
+  // tokens. `:id`/`:sessionId` match exactly one non-empty path segment.
+  { method: "GET", path: "/api/oauth/plaid/link-token" },
+  { method: "POST", path: "/api/oauth/plaid/exchange" },
+  { method: "POST", path: "/api/relay/connect/session" },
+  { method: "GET", path: "/api/relay/connect/credentials/:sessionId" },
+  { method: "PUT", path: "/api/accounts/:id" },
+  { method: "DELETE", path: "/api/accounts/:id" },
+  { method: "POST", path: "/api/oauth/gocardless/requisitions/:id/status" },
+  // Native Flutter client (Phase 40, #19) — config forms (export/vlt/webhooks).
+  // Owner-only and deliberately NOT here: /api/cloudflare/* (upgrade,
+  // uninstall), PUT /api/settings/cloudflare, password change.
+  { method: "PUT", path: "/api/config" },
+  { method: "POST", path: "/api/config/export/test" },
+  { method: "POST", path: "/api/config/vlt/test" },
+  { method: "POST", path: "/api/config/webhooks/test" },
+  { method: "GET", path: "/api/webhooks/health" },
+  { method: "PUT", path: "/api/settings/relay" },
 ] as const

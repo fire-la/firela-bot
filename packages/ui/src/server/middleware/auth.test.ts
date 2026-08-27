@@ -180,12 +180,22 @@ describe("authMiddleware role enforcement (PR-3)", () => {
     app.get("/api/config", (c) => c.json({ ok: true }))
     app.get("/api/services", (c) => c.json({ ok: true }))
     app.get("/api/cloudflare/version", (c) => c.json({ ok: true }))
-    // owner-only / credential-mint (app must be denied)
-    app.put("/api/config", (c) => c.json({ ok: true }))
-    app.put("/api/settings/password", (c) => c.json({ ok: true }))
+    // allowlisted native-client connect/config surface (#19)
     app.get("/api/oauth/plaid/link-token", (c) => c.json({ ok: true }))
     app.post("/api/oauth/plaid/exchange", (c) => c.json({ ok: true }))
-    app.post("/api/connect/session", (c) => c.json({ ok: true }))
+    app.post("/api/relay/connect/session", (c) => c.json({ ok: true }))
+    app.get("/api/relay/connect/credentials/:sessionId", (c) => c.json({ ok: true }))
+    app.put("/api/accounts/:id", (c) => c.json({ ok: true }))
+    app.delete("/api/accounts/:id", (c) => c.json({ ok: true }))
+    app.post("/api/oauth/gocardless/requisitions/:id/status", (c) => c.json({ ok: true }))
+    app.put("/api/config", (c) => c.json({ ok: true }))
+    app.post("/api/config/export/test", (c) => c.json({ ok: true }))
+    app.post("/api/config/vlt/test", (c) => c.json({ ok: true }))
+    app.post("/api/config/webhooks/test", (c) => c.json({ ok: true }))
+    app.get("/api/webhooks/health", (c) => c.json({ ok: true }))
+    app.put("/api/settings/relay", (c) => c.json({ ok: true }))
+    // owner-only (app must be denied)
+    app.put("/api/settings/password", (c) => c.json({ ok: true }))
     app.post("/api/cloudflare/upgrade", (c) => c.json({ ok: true }))
     // public
     app.get("/api/relay/health", (c) => c.json({ ok: true }))
@@ -226,33 +236,128 @@ describe("authMiddleware role enforcement (PR-3)", () => {
     }
   })
 
-  it("app token: method mismatch on a shared path -> 403 (GET /api/config ok, PUT denied)", async () => {
+  it("app token: method mismatch on a shared path -> 403 (GET+PUT /api/config ok, POST denied)", async () => {
     const kv = roleKv({ appId: "app-1" })
     const app = roleApp()
     const tok = await jwt({ sub: "app-1", role: "app" })
     expect((await app.request("/api/config", { headers: bearer(tok) }, envOf(kv))).status).toBe(200)
-    const put = await app.request("/api/config", { method: "PUT", headers: bearer(tok) }, envOf(kv))
-    expect(put.status).toBe(403)
-    expect(((await put.json()) as { errorCode: string }).errorCode).toBe("APP_ROLE_PATH_DENIED")
+    expect((await app.request("/api/config", { method: "PUT", headers: bearer(tok) }, envOf(kv))).status).toBe(200)
+    const post = await app.request("/api/config", { method: "POST", headers: bearer(tok) }, envOf(kv))
+    expect(post.status).toBe(403)
+    expect(((await post.json()) as { errorCode: string }).errorCode).toBe("APP_ROLE_PATH_DENIED")
   })
 
-  it("app token: credential-mint + infra + connect-init denied (403, no dead-end)", async () => {
+  it("app token: native-client connect surface allowed (link-token/exchange/relay session/credentials)", async () => {
     const kv = roleKv({ appId: "app-1" })
     const app = roleApp()
     const tok = await jwt({ sub: "app-1", role: "app" })
-    // GET init denied too — bank-connect is fully owner-only (no half-connected flow)
-    for (const path of ["/api/oauth/plaid/link-token", "/api/cache", "/api/cloudflare"]) {
+    expect(
+      (await app.request("/api/oauth/plaid/link-token", { headers: bearer(tok) }, envOf(kv))).status,
+    ).toBe(200)
+    expect(
+      (await app.request("/api/oauth/plaid/exchange", { method: "POST", headers: bearer(tok) }, envOf(kv)))
+        .status,
+    ).toBe(200)
+    expect(
+      (await app.request("/api/relay/connect/session", { method: "POST", headers: bearer(tok) }, envOf(kv)))
+        .status,
+    ).toBe(200)
+    expect(
+      (await app.request("/api/relay/connect/credentials/sess-1", { headers: bearer(tok) }, envOf(kv)))
+        .status,
+    ).toBe(200)
+  })
+
+  it("app token: config-form surface allowed (PUT config, tests, webhooks health, relay settings)", async () => {
+    const kv = roleKv({ appId: "app-1" })
+    const app = roleApp()
+    const tok = await jwt({ sub: "app-1", role: "app" })
+    expect(
+      (await app.request("/api/config", { method: "PUT", headers: bearer(tok) }, envOf(kv))).status,
+    ).toBe(200)
+    for (const p of ["/api/config/export/test", "/api/config/vlt/test", "/api/config/webhooks/test"]) {
+      expect((await app.request(p, { method: "POST", headers: bearer(tok) }, envOf(kv))).status).toBe(200)
+    }
+    expect(
+      (await app.request("/api/webhooks/health", { headers: bearer(tok) }, envOf(kv))).status,
+    ).toBe(200)
+    expect(
+      (await app.request("/api/settings/relay", { method: "PUT", headers: bearer(tok) }, envOf(kv)))
+        .status,
+    ).toBe(200)
+  })
+
+  it("app token: infra + password still owner-only (403, no dead-end)", async () => {
+    const kv = roleKv({ appId: "app-1" })
+    const app = roleApp()
+    const tok = await jwt({ sub: "app-1", role: "app" })
+    for (const path of ["/api/cache", "/api/cloudflare"]) {
       expect((await app.request(path, { headers: bearer(tok) }, envOf(kv))).status).toBe(403)
     }
-    for (const path of ["/api/oauth/plaid/exchange", "/api/connect/session", "/api/cloudflare/upgrade"]) {
+    for (const path of ["/api/cloudflare/upgrade", "/api/settings/cloudflare"]) {
       expect(
-        (await app.request(path, { method: "POST", headers: bearer(tok) }, envOf(kv))).status,
+        (await app.request(path, { method: "PUT", headers: bearer(tok) }, envOf(kv))).status,
       ).toBe(403)
     }
     expect(
       (await app.request("/api/settings/password", { method: "PUT", headers: bearer(tok) }, envOf(kv)))
         .status,
     ).toBe(403)
+  })
+
+  it("app token: pattern entries match exactly one non-empty segment (PUT/DELETE accounts/:id)", async () => {
+    const kv = roleKv({ appId: "app-1" })
+    const app = roleApp()
+    const tok = await jwt({ sub: "app-1", role: "app" })
+    expect(
+      (await app.request("/api/accounts/item-1", { method: "PUT", headers: bearer(tok) }, envOf(kv)))
+        .status,
+    ).toBe(200)
+    expect(
+      (await app.request("/api/accounts/item-1", { method: "DELETE", headers: bearer(tok) }, envOf(kv)))
+        .status,
+    ).toBe(200)
+    // bypass probes: extra segment / missing param / wrong method
+    for (const [path, method] of [
+      ["/api/accounts/item-1/extra", "PUT"],
+      ["/api/accounts", "PUT"],
+      ["/api/accounts/item-1", "GET"],
+      ["/api/accounts/", "DELETE"],
+    ] as const) {
+      const res = await app.request(path, { method, headers: bearer(tok) }, envOf(kv))
+      expect(res.status, `${method} ${path}`).toBe(403)
+    }
+  })
+
+  it("app token: credentials/:sessionId pattern — allow, wrong method denied", async () => {
+    const kv = roleKv({ appId: "app-1" })
+    const app = roleApp()
+    const tok = await jwt({ sub: "app-1", role: "app" })
+    expect(
+      (await app.request("/api/relay/connect/credentials/sess-1", { headers: bearer(tok) }, envOf(kv)))
+        .status,
+    ).toBe(200)
+    expect(
+      (await app.request("/api/relay/connect/credentials/sess-1", { method: "PUT", headers: bearer(tok) }, envOf(kv)))
+        .status,
+    ).toBe(403)
+  })
+
+  it("app token: traversal collapses before the allowlist — no privilege gain", async () => {
+    const kv = roleKv({ appId: "app-1" })
+    const app = roleApp()
+    const tok = await jwt({ sub: "app-1", role: "app" })
+    // ".." resolves in c.req.path pre-middleware: this is literally
+    // POST /api/accounts (not allowlisted; only GET is) -> denied
+    expect(
+      (await app.request("/api/sync/run/../accounts", { method: "POST", headers: bearer(tok) }, envOf(kv)))
+        .status,
+    ).toBe(403)
+    // collapsed to GET /api/config (allowlisted) -> allowed, but that is the
+    // same endpoint reachable directly — no escalation
+    expect(
+      (await app.request("/api/accounts/../config", { headers: bearer(tok) }, envOf(kv))).status,
+    ).toBe(200)
   })
 
   it("app token cannot bypass via prefix: /api/sync/runXXX is denied (403)", async () => {

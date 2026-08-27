@@ -52,12 +52,32 @@ function normalizePath(path: string): string {
 }
 
 /**
- * Whether an `app`-role token may reach `(method, path)` (exact match only).
+ * Whether an `app`-role token may reach `(method, path)`.
  * Method-aware so a read path (GET /api/config) does not silently grant its
  * destructive sibling (PUT /api/config). See APP_ROLE_ALLOWLIST.
+ *
+ * Pattern syntax: an allowlist segment written as `:name` matches exactly one
+ * non-empty request path segment (e.g. `/api/accounts/:id` allows
+ * `/api/accounts/abc` but NOT `/api/accounts` or `/api/accounts/a/b`).
+ * Everything else is a literal segment compared for equality. Semantics
+ * preserved from the exact-match era (#19):
+ * - Fail-closed: no entry match -> deny.
+ * - Hono collapses ".." in `c.req.path` before middleware runs (see
+ *   PUBLIC_PATHS comment), so traversal resolves to its collapsed form and
+ *   must still match an entry literally to pass.
+ * - `normalizePath` (trailing-slash strip, no case folding) applies first.
  */
 function isAppAllowed(method: string, path: string): boolean {
-  return APP_ROLE_ALLOWLIST.some((e) => e.method === method && e.path === path)
+  const norm = normalizePath(path)
+  return APP_ROLE_ALLOWLIST.some((e) => {
+    if (e.method !== method) return false
+    const entrySegs = e.path.split("/")
+    const pathSegs = norm.split("/")
+    if (entrySegs.length !== pathSegs.length) return false
+    return entrySegs.every(
+      (seg, i) => (seg.startsWith(":") ? pathSegs[i] !== "" : seg === pathSegs[i]),
+    )
+  })
 }
 
 /**
