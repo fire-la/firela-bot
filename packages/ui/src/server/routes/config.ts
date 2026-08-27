@@ -17,6 +17,7 @@ import { serverCache, CacheKeys } from "../lib/server-cache.js"
 import { RELAY_API_KEY_KEY, SETUP_PASSWORD_KEY, CF_API_TOKEN_KEY } from "../constants.js"
 import { getRelayApiKey } from "../lib/relay-helpers.js"
 import { getCloudflareApiToken } from "../lib/cloudflare-helpers.js"
+import { isApp } from "../middleware/auth.js"
 import { maskApiKey } from "@firela/billclaw-core/relay"
 
 export const configRoutes = new Hono<{ Bindings: Env }>()
@@ -141,6 +142,12 @@ function deepMergeConfig(existing: unknown, partial: unknown): unknown {
   for (const [key, value] of Object.entries(
     partial as Record<string, unknown>,
   )) {
+    // Skip prototype-chain keys: plain assignment would hit the __proto__
+    // setter instead of creating an own property (predictability, not a real
+    // pollution vector in workerd).
+    if (key === "__proto__" || key === "constructor" || key === "prototype") {
+      continue
+    }
     if (value === null) {
       delete base[key]
       continue
@@ -151,6 +158,20 @@ function deepMergeConfig(existing: unknown, partial: unknown): unknown {
     base[key] = deepMergeConfig(base[key], value)
   }
   return base
+}
+
+/**
+ * Whether any value in the payload is an explicit JSON null (the delete
+ * marker). Used to keep app-role PUTs from wiping sections they cannot even
+ * read — null-deletion is owner-only.
+ */
+function containsNull(value: unknown): boolean {
+  if (value === null) return true
+  if (Array.isArray(value)) return value.some(containsNull)
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).some(containsNull)
+  }
+  return false
 }
 
 /**
@@ -174,6 +195,17 @@ configRoutes.put(
       }
 
       const partial = c.req.valid("json")
+      // Null-deletion (the only way to remove a key) is owner-only: an app
+      // token must not be able to wipe sections it cannot even read.
+      if (isApp(c) && containsNull(partial)) {
+        return c.json(
+          {
+            success: false,
+            error: "App role cannot delete config keys",
+          },
+          400,
+        )
+      }
       const existing = await c.env.CONFIG.get(CONFIG_KEY, "json")
       const config = deepMergeConfig(existing ?? {}, partial)
       await c.env.CONFIG.put(CONFIG_KEY, JSON.stringify(config))

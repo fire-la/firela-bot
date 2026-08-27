@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
+import { Hono } from "hono"
 
 import { configRoutes } from "./config.js"
 
@@ -106,6 +107,52 @@ describe("PUT /api/config (deep-merge)", () => {
     // a sender that wants a key gone must send null, not omit it.
     expect(merged.section).toEqual({ x: 2, y: 1 })
     expect(merged.keep).toBe(true)
+  })
+
+  it("prototype-chain keys (__proto__/constructor) are skipped, not stored", async () => {
+    seed({ safe: 1 })
+
+    await putConfig({
+      safe: 2,
+      __proto__: { polluted: true },
+      constructor: { polluted: true },
+    })
+
+    const merged = JSON.parse(lastPut!)
+    expect(merged).toEqual({ safe: 2 })
+    expect(JSON.stringify(merged)).not.toContain("polluted")
+  })
+
+  it("app role: null-deletion is rejected (no section wipe); owner may delete", async () => {
+    seed({ vlt: { region: "us", accessToken: "secret" } })
+
+    // App role (jwtPayload.role === "app"). configRoutes mount at /api with
+    // their own /config segment (mirrors index.ts).
+    const appHono = new Hono()
+    appHono.use("/api/*", async (c, next) => {
+      c.set("jwtPayload", { sub: "x", role: "app" })
+      await next()
+    })
+    appHono.route("/api", configRoutes)
+    const denied = await appHono.request(
+      "/api/config",
+      {
+        method: "PUT",
+        body: JSON.stringify({ vlt: null }),
+        headers: { "content-type": "application/json" },
+      },
+      env,
+    )
+    expect(denied.status).toBe(400)
+    expect(lastPut).toBeNull() // rejected before any write
+    expect(JSON.parse(store.get("billclaw:config")!)).toEqual({
+      vlt: { region: "us", accessToken: "secret" },
+    })
+
+    // Owner role (no jwtPayload — direct route call) may still delete.
+    const res = await putConfig({ vlt: null })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(lastPut!)).toEqual({})
   })
 
   it("returns 400 when CONFIG KV is unavailable", async () => {
