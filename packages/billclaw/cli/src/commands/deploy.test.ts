@@ -190,6 +190,24 @@ Claim URL: https://dash.cloudflare.com/claim-preview?claimToken=abc.def_123`
     expect(parseClaimUrl(output)).toBeNull()
     expect(parseClaimMinutes(output)).toBeNull()
   })
+
+  it("prefers the id inside the kv_namespaces snippet over decoy id fields", () => {
+    const output = `Account id = "should-not-match"
+🌀 Creating namespace with title "CONFIG"
+✨ Success!
+[[kv_namespaces]]
+binding = "CONFIG"
+id = "real-id-123"`
+    expect(parseKvIdFromCreate(output)).toBe("real-id-123")
+  })
+
+  it("parses the workers.dev URL even when the line has leading symbols", () => {
+    const output = `Uploaded firela-bot
+🚀 https://firela-bot.example.workers.dev (1.37 sec)`
+    expect(parseWorkerUrl(output)).toBe(
+      "https://firela-bot.example.workers.dev",
+    )
+  })
 })
 
 // Command-level tests with mocked wrangler utilities

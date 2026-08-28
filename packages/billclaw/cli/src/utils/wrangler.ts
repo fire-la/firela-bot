@@ -7,7 +7,7 @@
  */
 
 import { spawn } from "node:child_process"
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { getPackagePath, parseWranglerToml } from "./cloudflare.js"
@@ -112,6 +112,21 @@ function writeTempSessionCache(
     writeFileSync(filePath, JSON.stringify(cache, null, 2))
   } catch {
     // Best-effort: without a cache, the next temporary deploy recreates the namespace.
+  }
+}
+
+/**
+ * Delete the temporary-session cache (used to self-heal after the cached
+ * KV namespace id goes stale, e.g. when the temporary account was claimed
+ * and wrangler provisioned a fresh one).
+ */
+export function clearTempSessionCache(
+  filePath: string = tempSessionCachePath(),
+): void {
+  try {
+    rmSync(filePath, { force: true })
+  } catch {
+    // Best-effort.
   }
 }
 
@@ -267,17 +282,25 @@ export function parseD1IdFromCreate(output: string): string | null {
 
 /**
  * Parse the KV namespace ID from `wrangler kv namespace create` output.
- * Accepts both JSON snippets ("id": "...") and TOML snippets (id = "...").
+ * Prefers the id inside the [[kv_namespaces]] snippet (avoids capturing
+ * unrelated id-like fields elsewhere in the output); falls back to the
+ * first bare id assignment. Accepts JSON ("id": "...") and TOML (id = "...").
  */
 export function parseKvIdFromCreate(output: string): string | null {
-  return output.match(/\bid"?\s*[=:]\s*"([^"]+)"/)?.[1] ?? null
+  return (
+    output.match(/\[\[kv_namespaces\]\][\s\S]{0,200}?\bid"?\s*[=:]\s*"([^"]+)"/)
+      ?.[1] ?? output.match(/\bid"?\s*[=:]\s*"([^"]+)"/)?.[1] ?? null
+  )
 }
 
 /**
  * Parse the deployed workers.dev URL from `wrangler deploy` output.
+ * The URL may share its line with symbols or extra text depending on the
+ * wrangler version, so match it anywhere (the deployed URL is the first
+ * workers.dev URL wrangler prints).
  */
 export function parseWorkerUrl(output: string): string | null {
-  return output.match(/^\s*(https:\/\/\S+\.workers\.dev)\s*$/m)?.[1] ?? null
+  return output.match(/(https:\/\/[a-z0-9.-]+\.workers\.dev)/i)?.[1] ?? null
 }
 
 /**
@@ -323,6 +346,25 @@ export function generateDeployConfig(
 }
 
 /**
+ * Create a resource via wrangler and parse the resulting id from its output.
+ */
+async function createResource(
+  run: (args: string[]) => Promise<CommandOutput>,
+  args: string[],
+  parse: (output: string) => string | null,
+  label: string,
+): Promise<string> {
+  const created = await run(args)
+  const parsed = parse(created.stdout + created.stderr)
+  if (created.code !== 0 || !parsed) {
+    throw new Error(
+      `Failed to create ${label}: ${created.stderr.trim() || created.stdout.trim()}`,
+    )
+  }
+  return parsed
+}
+
+/**
  * Resolve (or create) the D1 database for deployment.
  * Reuses an existing database by name so repeat deploys are idempotent.
  */
@@ -335,14 +377,12 @@ async function resolveD1Id(
   if (existingD1) {
     return existingD1
   }
-  const created = await run(["d1", "create", databaseName])
-  const parsed = parseD1IdFromCreate(created.stdout + created.stderr)
-  if (created.code !== 0 || !parsed) {
-    throw new Error(
-      `Failed to create D1 database "${databaseName}": ${created.stderr.trim() || created.stdout.trim()}`,
-    )
-  }
-  return parsed
+  return createResource(
+    run,
+    ["d1", "create", databaseName],
+    parseD1IdFromCreate,
+    `D1 database "${databaseName}"`,
+  )
 }
 
 /**
@@ -351,44 +391,45 @@ async function resolveD1Id(
  * Normal mode lists namespaces and reuses one with a matching title.
  * Temporary mode cannot list (no --temporary support on that command),
  * so the created namespace id is cached locally for the claim window.
+ * Returns whether the id came from the cache (deploy retries once on
+ * failure in that case — the cached id can go stale if the temporary
+ * account was claimed and wrangler provisioned a fresh one).
  */
 async function resolveKvId(
   run: (args: string[]) => Promise<CommandOutput>,
   kvTitle: string,
   temporary: boolean,
-): Promise<string> {
-  if (temporary) {
-    const cache = readTempSessionCache()
-    if (cache?.kvNamespaceId && isTempCacheFresh(cache)) {
-      return cache.kvNamespaceId
+): Promise<{ id: string; fromCache: boolean }> {
+  if (!temporary) {
+    const kvList = await run(["kv", "namespace", "list", "--json"])
+    const existingKv = findKvIdByTitle(kvList.stdout + kvList.stderr, kvTitle)
+    if (existingKv) {
+      return { id: existingKv, fromCache: false }
     }
-    const created = await run(["kv", "namespace", "create", kvTitle])
-    const parsed = parseKvIdFromCreate(created.stdout + created.stderr)
-    if (created.code !== 0 || !parsed) {
-      throw new Error(
-        `Failed to create KV namespace "${kvTitle}": ${created.stderr.trim() || created.stdout.trim()}`,
-      )
-    }
-    writeTempSessionCache({
-      kvNamespaceId: parsed,
-      createdAt: Date.now(),
-    })
-    return parsed
+    const created = await createResource(
+      run,
+      ["kv", "namespace", "create", kvTitle],
+      parseKvIdFromCreate,
+      `KV namespace "${kvTitle}"`,
+    )
+    return { id: created, fromCache: false }
   }
 
-  const kvList = await run(["kv", "namespace", "list", "--json"])
-  const existingKv = findKvIdByTitle(kvList.stdout + kvList.stderr, kvTitle)
-  if (existingKv) {
-    return existingKv
+  const cache = readTempSessionCache()
+  if (cache?.kvNamespaceId && isTempCacheFresh(cache)) {
+    return { id: cache.kvNamespaceId, fromCache: true }
   }
-  const created = await run(["kv", "namespace", "create", kvTitle])
-  const parsed = parseKvIdFromCreate(created.stdout + created.stderr)
-  if (created.code !== 0 || !parsed) {
-    throw new Error(
-      `Failed to create KV namespace "${kvTitle}": ${created.stderr.trim() || created.stdout.trim()}`,
-    )
-  }
-  return parsed
+  const created = await createResource(
+    run,
+    ["kv", "namespace", "create", kvTitle],
+    parseKvIdFromCreate,
+    `KV namespace "${kvTitle}"`,
+  )
+  writeTempSessionCache({
+    kvNamespaceId: created,
+    createdAt: Date.now(),
+  })
+  return { id: created, fromCache: false }
 }
 
 /**
@@ -418,41 +459,58 @@ export async function deployUiWorker(
       env,
     )
 
-  const databaseId = await resolveD1Id(run, resources.d1DatabaseName)
-  const kvNamespaceId = await resolveKvId(
-    run,
-    resources.kvBindingName,
-    options.temporary,
-  )
+  // ponytail: single retry, only when the cached temporary-session KV id may
+  // be stale; upgrade to account-keyed cache if temporary-account lifecycles
+  // get more complex.
+  for (let attempt = 1; ; attempt++) {
+    let usedCachedKvId = false
+    try {
+      const databaseId = await resolveD1Id(run, resources.d1DatabaseName)
+      const kv = await resolveKvId(
+        run,
+        resources.kvBindingName,
+        options.temporary,
+      )
+      usedCachedKvId = kv.fromCache
 
-  const configContent = generateDeployConfig(baseConfig, {
-    databaseId,
-    kvNamespaceId,
-    stripCrons: options.temporary,
-  })
-  const configFileName = "wrangler.deploy.toml"
-  const configPath = path.join(uiPath, configFileName)
-  writeFileSync(configPath, configContent)
+      const configContent = generateDeployConfig(baseConfig, {
+        databaseId,
+        kvNamespaceId: kv.id,
+        stripCrons: options.temporary,
+      })
+      const configFileName = "wrangler.deploy.toml"
+      const configPath = path.join(uiPath, configFileName)
+      writeFileSync(configPath, configContent)
 
-  const deployed = await run(["deploy", "-c", configFileName])
-  if (deployed.code !== 0) {
-    throw new Error(
-      `wrangler deploy failed: ${deployed.stderr.trim() || deployed.stdout.trim()}`,
-    )
-  }
+      const deployed = await run(["deploy", "-c", configFileName])
+      if (deployed.code !== 0) {
+        throw new Error(
+          `wrangler deploy failed: ${deployed.stderr.trim() || deployed.stdout.trim()}`,
+        )
+      }
 
-  const output = deployed.stdout + deployed.stderr
-  const workerUrl = parseWorkerUrl(output)
-  if (!workerUrl) {
-    throw new Error(
-      `Could not find the deployed Worker URL in wrangler output:\n${output}`,
-    )
-  }
+      const output = deployed.stdout + deployed.stderr
+      const workerUrl = parseWorkerUrl(output)
+      if (!workerUrl) {
+        throw new Error(
+          `Could not find the deployed Worker URL in wrangler output:\n${output}`,
+        )
+      }
 
-  return {
-    workerUrl,
-    claimUrl: parseClaimUrl(output) ?? undefined,
-    claimMinutes: parseClaimMinutes(output) ?? undefined,
-    configPath,
+      return {
+        workerUrl,
+        claimUrl: parseClaimUrl(output) ?? undefined,
+        claimMinutes: parseClaimMinutes(output) ?? undefined,
+        configPath,
+      }
+    } catch (error) {
+      if (options.temporary && usedCachedKvId && attempt === 1) {
+        // The cached KV namespace id no longer exists on the account
+        // wrangler is using — drop it and retry with a fresh namespace.
+        clearTempSessionCache()
+        continue
+      }
+      throw error
+    }
   }
 }
