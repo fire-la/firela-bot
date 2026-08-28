@@ -76,3 +76,6 @@ playwright/.auth/*.json
 
 # Generated deploy config (billclaw deploy)
 packages/ui/wrangler.deploy.toml
+
+# wrangler dry-run bundle output
+packages/ui/worker-bundle/

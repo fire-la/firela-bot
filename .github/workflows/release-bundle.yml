@@ -1,0 +1,74 @@
+name: Release Trial Bundle
+
+# Produces the deployable worker bundle consumed by the firela-trial
+# service (zero-signup trial deployments on Cloudflare temporary
+# accounts). Layout inside the zip:
+#   worker-bundle/index.js          pre-bundled ESM worker (alias shims inlined)
+#   dist/                           React SPA static assets
+#   wrangler.template.toml          deploy config template (placeholder ids)
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    name: Build and attach trial bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Bundle worker (dry-run)
+        working-directory: packages/ui
+        run: pnpm exec wrangler deploy --dry-run --outdir=worker-bundle
+
+      - name: Strip sourcemap
+        run: rm -f packages/ui/worker-bundle/index.js.map
+
+      - name: Assemble trial bundle
+        run: |
+          mkdir -p staging
+          cp -r packages/ui/worker-bundle staging/worker-bundle
+          cp -r packages/ui/dist staging/dist
+          cp packages/ui/trial/wrangler.template.toml staging/
+          cd staging
+          zip -rq "$GITHUB_WORKSPACE/firela-bot-trial-bundle.zip" .
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: firela-bot-trial-bundle.zip
