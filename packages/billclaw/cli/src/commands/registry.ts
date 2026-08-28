@@ -126,7 +126,9 @@ export class CommandRegistry {
         await command.handler(context, mergedOptions)
       } catch (error) {
         runtime.logger.error("Command failed:", error)
-        process.exit(1)
+        // Set exitCode instead of calling process.exit so buffered
+        // stdout/stderr (pipes) flush before the process terminates.
+        process.exitCode = 1
       }
     })
   }

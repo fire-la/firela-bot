@@ -73,3 +73,6 @@ docs/
 
 # Playwright auth sessions (NEVER COMMIT)
 playwright/.auth/*.json
+
+# Generated deploy config (billclaw deploy)
+packages/ui/wrangler.deploy.toml

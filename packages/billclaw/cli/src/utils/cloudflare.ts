@@ -129,3 +129,14 @@ export function getPackagePath(packageName: string): string {
   // Then into the sibling package directory
   return path.resolve(currentDir, "..", "..", "..", "..", packageName)
 }
+
+/**
+ * Get the monorepo root directory
+ *
+ * Resolves 5 levels up from this utils/ directory:
+ * utils/ -> src/ -> cli/ -> billclaw/ -> packages/ -> monorepo root
+ */
+export function getMonorepoRoot(): string {
+  const currentDir = path.dirname(fileURLToPath(import.meta.url))
+  return path.resolve(currentDir, "..", "..", "..", "..", "..")
+}
