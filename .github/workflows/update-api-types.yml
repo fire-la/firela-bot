@@ -31,19 +31,19 @@ jobs:
       - name: Check for updates
         id: check
         run: |
-          CURRENT=$(pnpm list @firela/api-types --json | jq -r '.[] | .dependencies["@firela/api-types"].version' 2>/dev/null || echo "not-found")
-          LATEST=$(npm view @firela/api-types version)
+          CURRENT=$(jq -r '.dependencies["@firela/api-types"]' packages/billclaw/core/package.json packages/ui/package.json | sort -u | paste -sd, -)
+          CANARY=$(npm view @firela/api-types dist-tags.canary)
           echo "current=$CURRENT" >> $GITHUB_OUTPUT
-          echo "latest=$LATEST" >> $GITHUB_OUTPUT
-          if [ "$CURRENT" != "$LATEST" ]; then
+          echo "canary=$CANARY" >> $GITHUB_OUTPUT
+          if [ "$CURRENT" != "$CANARY" ]; then
             echo "needs_update=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Update @firela/api-types
         if: steps.check.outputs.needs_update == 'true'
-        run: |
-          pnpm update @firela/api-types
-          pnpm install
+        env:
+          CANARY: ${{ steps.check.outputs.canary }}
+        run: pnpm --filter @firela/billclaw-core --filter @firela/billclaw-ui add "@firela/api-types@$CANARY"
 
       - name: Build packages
         if: steps.check.outputs.needs_update == 'true'
@@ -58,12 +58,12 @@ jobs:
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: 'chore: update @firela/api-types to ${{ steps.check.outputs.latest }}'
-          title: 'chore: update @firela/api-types to ${{ steps.check.outputs.latest }}'
+          commit-message: 'chore: update @firela/api-types to ${{ steps.check.outputs.canary }}'
+          title: 'chore: update @firela/api-types to ${{ steps.check.outputs.canary }}'
           body: |
             ## API Types Update
 
-            Updates `@firela/api-types` from `${{ steps.check.outputs.current }}` to `${{ steps.check.outputs.latest }}`.
+            Updates `@firela/api-types` from `${{ steps.check.outputs.current }}` to `${{ steps.check.outputs.canary }}`.
 
             ### Changes
             Check the [api-specs releases](https://github.com/fire-la/api-specs/releases) for details.
