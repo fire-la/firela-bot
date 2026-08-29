@@ -61,6 +61,7 @@
     "react-router-dom": "^6.3.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
+    "uqr": "^0.1.3",
     "zod": "^3.25.0",
     "zustand": "^4.4.7"
   },

@@ -4,9 +4,10 @@
  * Deploy Button deployments have no CLI output and (end state) no SPA — the
  * Worker itself is the only channel that can birth a pairing code. On a FRESH
  * deployment (no setup password, nothing ever redeemed), GET / renders a
- * one-time text/plain pairing page; otherwise it delegates to the app's
- * notFound (SPA fallback). Bootstrap-only: the surface disappears after the
- * first successful redeem or owner setup and never comes back.
+ * one-time minimal static HTML pairing page (tappable link + inline SVG QR,
+ * issue #25); otherwise it delegates to the app's notFound (SPA fallback).
+ * Bootstrap-only: the surface disappears after the first successful redeem or
+ * owner setup and never comes back.
  *
  * ONE mechanism with /api/pair/issue (Decision B): claims are minted with the
  * exact same KV shape + TTL, so the mobile app redeems via the unchanged
@@ -23,6 +24,7 @@
  */
 
 import { Hono } from "hono"
+import { renderSVG } from "uqr"
 import type { Env } from "../index.js"
 import {
   PAIR_BOOTSTRAP_CURRENT_KEY,
@@ -75,7 +77,10 @@ async function currentOrNewClaim(
 }
 
 /**
- * GET / — fresh-deployment pairing page (text/plain), else SPA fallback.
+ * GET / — fresh-deployment pairing page (minimal static HTML), else SPA
+ * fallback (issue #25: text/plain URLs are not tappable on mobile — a real
+ * `<a>` makes long-press → "Copy link address" the handoff, and the inline QR
+ * serves the screenshot-scan and desktop-browser paths).
  */
 bootstrapRoutes.get("/", async (c) => {
   const kv = c.env.CONFIG
@@ -92,19 +97,57 @@ bootstrapRoutes.get("/", async (c) => {
   // Display grouping mirrors src/lib/pairing.ts groupClaimCode — that module is
   // client-side (imports navigator.clipboard) and must not enter the server bundle.
   const grouped = `${code.slice(0, 4)}-${code.slice(4)}`
-  const body = [
-    "firela-bot is deployed and waiting to pair with the mobile app.",
-    "",
-    `Worker URL:  ${origin}`,
-    `Claim code:  ${grouped}  (single-use, expires in ~${minutesLeft} min)`,
-    "Pairing link (open in the firela app):",
-    `${origin}/pair#code=${code}`,
-    "",
-    "This page disappears after the first successful pairing.",
-    `To set the dashboard password instead, open ${origin}/auth/setup`,
-  ].join("\n")
+  const pairingUrl = `${origin}/pair#code=${code}`
+  // Same QR contract as the SPA Pair page (qrcode.react level "M", 4-module
+  // quiet zone). renderSVG emits viewBox-only SVG — no fixed size, no scripts.
+  const qr = renderSVG(pairingUrl, { ecc: "M", border: 4 })
+
+  // Single static response: inline styles, no scripts, no external resources
+  // (no CDN, no webfonts). No HTML escaping needed today: `origin` comes from
+  // URL parsing (forbidden host code points cover < > ") and the code is
+  // Crockford-alphabet only — asserted to avoid drift with pair-helpers.ts.
+  if (!/^[0-9A-Z]{8}$/.test(code)) throw new Error("unexpected claim-code shape")
+  const body = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>firela-bot — pair your app</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; color: #111;
+         background: #f6f6f7; }
+  main { max-width: 30rem; margin: 0 auto; padding: 2rem 1.25rem; }
+  .card { background: #fff; border-radius: 0.75rem; padding: 1.5rem;
+          display: flex; flex-direction: column; align-items: center;
+          gap: 1rem; }
+  .qr { display: inline-flex; background: #fff; }
+  .qr svg { width: min(70vw, 16rem); height: auto; }
+  #claim { font-family: ui-monospace, monospace; font-size: 2rem;
+           font-weight: 700; letter-spacing: 0.2em;
+           -webkit-user-select: all; user-select: all; }
+  a { word-break: break-all; }
+  small { color: #555; }
+</style>
+</head>
+<body>
+<main>
+  <h1>firela-bot is deployed</h1>
+  <p>Scan this QR in the firela app, or use the pairing link below.
+     This page disappears after the first successful pairing.</p>
+  <div class="card">
+    <div class="qr">${qr}</div>
+    <div><code id="claim">${grouped}</code></div>
+    <p><a href="${pairingUrl}">${pairingUrl}</a><br>
+       <small>single-use, expires in ~${minutesLeft} min</small></p>
+  </div>
+  <p><small>Worker URL: ${origin}</small></p>
+  <p><small>To set the dashboard password instead, open
+     <a href="/auth/setup">${origin}/auth/setup</a></small></p>
+</main>
+</body>
+</html>`
 
   // The body carries a live credential — never cache it.
   c.header("Cache-Control", "no-store")
-  return c.text(body)
+  return c.html(body)
 })

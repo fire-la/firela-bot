@@ -1,10 +1,12 @@
 /**
- * First-run bootstrap surface tests (ADR-009 Decision C, issue #21).
+ * First-run bootstrap surface tests (ADR-009 Decision C, issue #21; HTML + QR
+ * upgrade issue #25).
  *
  * Covers the fresh gate (setup password / bootstrap_done close the surface),
  * the idempotent mint (refresh reuses the pending claim), stale-pointer
- * re-mint, and the text/plain delivery contract (grouped code, /pair#code=
- * link — fragment, never a query param).
+ * re-mint, and the minimal-static-HTML delivery contract: tappable
+ * /pair#code= link (fragment, never a query param), grouped code block,
+ * inline SVG QR, no scripts, no external subresources, no-store.
  *
  * @packageDocumentation
  */
@@ -80,19 +82,28 @@ function rawCodeFromBody(body: string): string {
 }
 
 describe("GET / — fresh deployment", () => {
-  it("renders the pairing page: text/plain, no-store, grouped code, /pair#code= link", async () => {
+  it("renders the pairing page: text/html, no-store, link + code + inline QR, zero scripts/external resources", async () => {
     const kv = makeKv()
     const res = await bootstrapApp().request("/", undefined, env(kv))
     expect(res.status).toBe(200)
-    expect(res.headers.get("content-type")).toMatch(/^text\/plain/)
+    expect(res.headers.get("content-type")).toMatch(/^text\/html/)
     expect(res.headers.get("cache-control")).toBe("no-store")
 
     const body = await res.text()
     expect(body).toContain("http://localhost")
     expect(body).toContain("/auth/setup")
     expect(body).not.toContain("?code=") // fragment only, never a query param
-    const grouped = body.match(/Claim code:\s+(\S+)/)![1]
+    // Tappable link as a real <a href> element.
+    expect(body).toContain(`<a href="http://localhost/pair#code=`)
+    // Grouped code in its own selectable block.
+    const grouped = body.match(/id="claim">([^<]+)</)![1]!
     expect(grouped).toMatch(GROUPED_RE)
+    // Inline server-generated QR of the same pairing URL.
+    expect(body).toContain("<svg")
+    // Zero scripts, zero external subresources — everything inline.
+    expect(body.toLowerCase()).not.toContain("<script")
+    expect(body).not.toMatch(/<(link|img)\b/i)
+    expect(body).not.toMatch(/\ssrc=/)
 
     // Claim stored pending with the claim TTL; pointer written with the same TTL.
     const raw = rawCodeFromBody(body)
