@@ -17,8 +17,13 @@ import {
   PAIR_BOOTSTRAP_DONE_KEY,
   SETUP_PASSWORD_KEY,
 } from "../constants.js"
-import { getAuthSecret, ensureAuthSecret } from "../lib/auth-helpers.js"
-import { hasLivePairedApp } from "../lib/pair-helpers.js"
+import { getAuthSecret, ensureAuthSecret, timingSafeEqualStr } from "../lib/auth-helpers.js"
+import {
+  clearProofFailures,
+  hasLivePairedApp,
+  proofLockRemaining,
+  recordProofFailure,
+} from "../lib/pair-helpers.js"
 
 export const authRoutes = new Hono<{ Bindings: Env }>()
 
@@ -57,6 +62,28 @@ authRoutes.post("/setup", zValidator("json", setupRequestSchema), async (c) => {
   const { password } = c.req.valid("json")
   const env = c.env
 
+  // Anonymous-oracle throttle (issue #29 precondition): /auth/setup doubles
+  // as SPA login, so wrong-password attempts are an unauthenticated guessing
+  // surface. Same D1 failure counter + exponential backoff as the app proof
+  // path, keyed by client IP instead of appId.
+  // ponytail: if the deployment topology hides the real client IP (see the
+  // Turnstile remoteip note in pair-helpers), anonymous callers share one
+  // bucket — worst case the endpoint is DoS-lockable for 15 min while the
+  // app-side proof path (keyed by appId) stays open.
+  const throttleKey = `setup:${c.req.header("CF-Connecting-IP") ?? "unknown"}`
+  const lockRemaining = await proofLockRemaining(env.DB, throttleKey)
+  if (lockRemaining > 0) {
+    return c.json(
+      {
+        success: false,
+        error: "Too many failed setup attempts; try again later",
+        errorCode: "SETUP_THROTTLED",
+        retryAfter: lockRemaining,
+      },
+      429,
+    )
+  }
+
   // Get or auto-generate JWT secret
   const jwtSecret = await ensureAuthSecret(env)
 
@@ -87,7 +114,8 @@ authRoutes.post("/setup", zValidator("json", setupRequestSchema), async (c) => {
     }
     // First call: accept any password and store it for future verification
     await env.CONFIG.put(SETUP_PASSWORD_KEY, password)
-  } else if (password !== storedPassword) {
+  } else if (!(await timingSafeEqualStr(password, storedPassword))) {
+    await recordProofFailure(env.DB, throttleKey)
     return c.json(
       {
         success: false,
@@ -97,6 +125,7 @@ authRoutes.post("/setup", zValidator("json", setupRequestSchema), async (c) => {
       401,
     )
   }
+  await clearProofFailures(env.DB, throttleKey)
 
   // Create JWT payload
   const now = Math.floor(Date.now() / 1000)

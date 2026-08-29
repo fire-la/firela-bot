@@ -15,6 +15,7 @@ import { zValidator } from "@hono/zod-validator"
 import type { Env } from "../index.js"
 import { serverCache, CacheKeys } from "../lib/server-cache.js"
 import { RELAY_API_KEY_KEY, SETUP_PASSWORD_KEY, CF_API_TOKEN_KEY } from "../constants.js"
+import { timingSafeEqualStr } from "../lib/auth-helpers.js"
 import { getRelayApiKey } from "../lib/relay-helpers.js"
 import { getCloudflareApiToken } from "../lib/cloudflare-helpers.js"
 import { isApp } from "../middleware/auth.js"
@@ -618,7 +619,6 @@ const changePasswordSchema = z.object({
  * PUT /api/settings/password
  *
  * Change the setup password. Requires JWT auth.
- * Rejects if password is managed via SETUP_PASSWORD env var.
  */
 configRoutes.put(
   "/settings/password",
@@ -628,7 +628,7 @@ configRoutes.put(
       const { currentPassword, newPassword } = c.req.valid("json")
 
       const storedPassword = await c.env.CONFIG.get(SETUP_PASSWORD_KEY) as string | null
-      if (!storedPassword || currentPassword !== storedPassword) {
+      if (!storedPassword || !(await timingSafeEqualStr(currentPassword, storedPassword))) {
         return c.json(
           { success: false, error: "Current password is incorrect" },
           401,

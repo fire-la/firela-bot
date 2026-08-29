@@ -14,7 +14,7 @@
  */
 
 import { sign } from "hono/jwt"
-import { ensureAuthSecret } from "./auth-helpers.js"
+import { ensureAuthSecret, timingSafeEqualStr } from "./auth-helpers.js"
 import {
   PAIR_APP_PREFIX,
   PAIR_CLAIM_PRUNE_GRACE_SEC,
@@ -147,8 +147,11 @@ export async function signAppToken(
 // --- Owner-password proof (issue #26 / Track C) ------------------------------
 
 /**
- * D1 schema for the owner-password proof throttle — per-appId failure counter
+ * D1 schema for the owner-password proof throttle — per-subject failure counter
  * with an exponential-backoff lock. Same lazy-create pattern as `pair_claim`.
+ * The `app_id` column is the throttle subject: a paired appId for the proof
+ * paths, or `setup:<client-ip>` for the anonymous /auth/setup oracle (issue #29
+ * precondition — both surfaces guard the same stored password).
  */
 const PAIR_PROOF_THROTTLE_CREATE_SQL = `
   CREATE TABLE IF NOT EXISTS pair_proof_throttle (
@@ -275,11 +278,11 @@ export async function getOwnerProofFailure(
       errorCode: "OWNER_PASSWORD_REQUIRED",
     }
   }
-  // Plaintext equality matches the /auth/setup + PUT /api/settings/password
-  // precedent (ADR-009 Track C residual note); hashing the stored password is
-  // the cross-cutting follow-up tracked in fire-la/firela-bot#29, not a
-  // per-surface patch.
-  if (password !== stored) {
+  // Comparison is the shared constant-time helper (issue #29 condition); the
+  // password is still STORED as plaintext (ADR-009 Track C residual note) —
+  // hashing at rest remains the cross-cutting follow-up in
+  // fire-la/firela-bot#29, not a per-surface patch.
+  if (!(await timingSafeEqualStr(password, stored))) {
     await recordProofFailure(env.DB, appId)
     return {
       status: 401,
