@@ -8,6 +8,7 @@
  *   POST /api/pair/redeem   (public)  validate the claim, sign an app JWT, store
  *                                     the pairing/revocation record
  *   POST /api/pair/revoke   (owner)   mark a paired app revoked
+ *   GET  /api/pair/apps     (owner)   list paired devices, newest-first
  *
  * `/redeem` is public (the claim code IS the auth); `/issue` + `/revoke` are
  * owner-only — enforced centrally by `authMiddleware`'s app-role default-deny
@@ -162,6 +163,44 @@ pairRoutes.post("/revoke", zValidator("json", revokeSchema), async (c) => {
   )
 
   return c.json({ success: true })
+})
+
+/**
+ * GET /api/pair/apps (owner)
+ *
+ * List paired devices (KV prefix PAIR_APP_PREFIX), newest-first. KV list is
+ * paginated (max 1000 keys/page) — loop the cursor. Records failing the
+ * shape check are skipped, not fatal.
+ */
+pairRoutes.get("/apps", async (c) => {
+  const apps: { appId: string; pairedAt: number; revoked: boolean }[] = []
+  let cursor: string | undefined
+  for (;;) {
+    const page = await c.env.CONFIG.list({ prefix: PAIR_APP_PREFIX, cursor })
+    for (const { name } of page.keys) {
+      const rec = (await c.env.CONFIG.get(name, "json")) as
+        | { appId?: unknown; pairedAt?: unknown; revoked?: unknown }
+        | null
+      if (
+        rec &&
+        typeof rec.appId === "string" &&
+        typeof rec.pairedAt === "number"
+      ) {
+        apps.push({
+          appId: rec.appId,
+          pairedAt: rec.pairedAt,
+          revoked: rec.revoked === true,
+        })
+      }
+    }
+    // `=== false` (not truthiness): this package compiles with
+    // strictNullChecks off, where truthiness cannot narrow the
+    // list_complete discriminant and page.cursor would not typecheck.
+    if (page.list_complete === false) cursor = page.cursor
+    else break
+  }
+  apps.sort((a, b) => b.pairedAt - a.pairedAt)
+  return c.json({ success: true, apps })
 })
 
 export default pairRoutes

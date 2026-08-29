@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from "react"
 import { toast, Toaster } from "sonner"
-import { QrCode, Copy, RefreshCw, AlertCircle, Loader2 } from "lucide-react"
+import { QrCode, Copy, RefreshCw, AlertCircle, Loader2, Ban } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { apiFetch } from "@/lib/auth"
 import {
@@ -17,11 +17,15 @@ import {
   groupClaimCode,
   formatCountdown,
   copyToClipboard,
+  listPairedApps,
+  revokeApp,
   type PairIssueResponse,
+  type PairedApp,
 } from "@/lib/pairing"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 
 export function PairAppPage() {
   const [issue, setIssue] = useState<PairIssueResponse | null>(null)
@@ -29,6 +33,11 @@ export function PairAppPage() {
   const [issuing, setIssuing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
+
+  const [apps, setApps] = useState<PairedApp[]>([])
+  const [appsLoading, setAppsLoading] = useState(true)
+  const [appsError, setAppsError] = useState<string | null>(null)
+  const [revoking, setRevoking] = useState<string | null>(null)
 
   // Issue a fresh claim code (owner Bearer attached by apiFetch).
   const issueCode = async () => {
@@ -58,6 +67,47 @@ export function PairAppPage() {
   useEffect(() => {
     issueCode()
   }, [])
+
+  // Load the paired-devices list (owner Bearer attached by apiFetch).
+  const loadApps = async () => {
+    setAppsLoading(true)
+    setAppsError(null)
+    try {
+      const json = await listPairedApps()
+      if (json.success && json.apps) {
+        setApps(json.apps)
+      } else {
+        setAppsError(json.error || "Failed to load paired devices")
+      }
+    } catch {
+      setAppsError("Failed to load paired devices -- network error")
+    } finally {
+      setAppsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadApps()
+  }, [])
+
+  // One-tap revoke (issue #22): revocation is idempotent and immediately
+  // visible in the list (Revoked badge), so no confirm dialog.
+  const handleRevoke = async (appId: string) => {
+    setRevoking(appId)
+    try {
+      const json = await revokeApp(appId)
+      if (json.success) {
+        toast.success("Device revoked")
+        await loadApps()
+      } else {
+        toast.error(json.error || "Failed to revoke device")
+      }
+    } catch {
+      toast.error("Failed to revoke device -- network error")
+    } finally {
+      setRevoking(null)
+    }
+  }
 
   const remainingMs = issue ? issue.expiresAt * 1000 - now : 0
   const expired = issue !== null && remainingMs <= 0
@@ -162,6 +212,72 @@ export function PairAppPage() {
               </Button>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="pt-6 space-y-3">
+          <h2 className="font-semibold">Paired devices</h2>
+
+          {appsLoading ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" /> Loading paired devices...
+            </p>
+          ) : appsError ? (
+            <Alert variant="destructive">
+              <AlertCircle className="size-4" />
+              <AlertDescription>{appsError}</AlertDescription>
+            </Alert>
+          ) : apps.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No devices paired yet. Scan the QR code above to pair the firela
+              app.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {apps.map((app) => (
+                <div
+                  key={app.appId}
+                  className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={app.revoked ? "destructive" : "secondary"}
+                      >
+                        {app.revoked ? "Revoked" : "Active"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        Paired {new Date(app.pairedAt * 1000).toLocaleString()}
+                      </span>
+                    </div>
+                    <div
+                      className="font-mono text-xs text-muted-foreground select-all mt-1"
+                      title={app.appId}
+                    >
+                      {app.appId.slice(0, 8)}…
+                    </div>
+                  </div>
+                  {!app.revoked && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      disabled={revoking === app.appId}
+                      onClick={() => handleRevoke(app.appId)}
+                    >
+                      {revoking === app.appId ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Ban className="size-4" />
+                      )}{" "}
+                      Revoke
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

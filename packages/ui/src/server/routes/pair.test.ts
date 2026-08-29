@@ -30,7 +30,7 @@ import type { Env } from "../index.js"
 
 type PutCall = { key: string; ttl?: number }
 
-function makeKv(initial: Record<string, unknown> = {}) {
+function makeKv(initial: Record<string, unknown> = {}, listPageSize = Infinity) {
   const store = new Map<string, string>()
   const puts: PutCall[] = []
   for (const [k, v] of Object.entries(initial)) {
@@ -52,6 +52,20 @@ function makeKv(initial: Record<string, unknown> = {}) {
     async put(key: string, value: string, options?: { expirationTtl?: number }) {
       store.set(key, value)
       puts.push({ key, ttl: options?.expirationTtl })
+    },
+    // Workers KV list contract: prefix-filtered keys, max `listPageSize` per
+    // page, opaque cursor for the next page (index as string here).
+    async list(opts?: { prefix?: string; cursor?: string }) {
+      const prefix = opts?.prefix ?? ""
+      const names = [...store.keys()].filter((k) => k.startsWith(prefix)).sort()
+      const start = Number(opts?.cursor ?? 0)
+      const page = names.slice(start, start + listPageSize)
+      const done = start + page.length >= names.length
+      return {
+        keys: page.map((name) => ({ name })),
+        list_complete: done,
+        ...(done ? {} : { cursor: String(start + page.length) }),
+      }
     },
     _puts: puts,
     _raw: (k: string) => store.get(k) ?? null,
@@ -333,6 +347,145 @@ describe("POST /api/pair/revoke (owner)", () => {
     )
     expect(res.status).toBe(404)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe("APP_NOT_PAIRED")
+  })
+})
+
+describe("GET /api/pair/apps (owner)", () => {
+  it("401 without a token", async () => {
+    const kv = makeKv()
+    const res = await pairApp().request("/api/pair/apps", {}, env(kv))
+    expect(res.status).toBe(401)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe("AUTH_MISSING")
+  })
+
+  it("403 APP_ROLE_PATH_DENIED with an app token (apps is owner-only)", async () => {
+    const kv = makeKv()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+    const res = await app.request(
+      "/api/pair/apps",
+      { headers: { Authorization: `Bearer ${appToken}` } },
+      env(kv),
+    )
+    expect(res.status).toBe(403)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "APP_ROLE_PATH_DENIED",
+    )
+  })
+
+  it("lists paired apps newest-first with revoked flags, claim keys excluded", async () => {
+    const kv = makeKv({
+      [PAIR_APP_PREFIX + "old"]: { appId: "old", pairedAt: 100, revoked: false },
+      [PAIR_APP_PREFIX + "new"]: { appId: "new", pairedAt: 200, revoked: true },
+      [PAIR_CLAIM_PREFIX + "ABCD1234"]: { status: "pending", createdAt: 1 },
+    })
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const res = await app.request(
+      "/api/pair/apps",
+      { headers: { Authorization: `Bearer ${owner}` } },
+      env(kv),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      success: boolean
+      apps: { appId: string; pairedAt: number; revoked: boolean }[]
+    }
+    expect(body.success).toBe(true)
+    expect(body.apps.map((a) => a.appId)).toEqual(["new", "old"])
+    expect(body.apps[0].revoked).toBe(true)
+    expect(body.apps[1].revoked).toBe(false)
+  })
+
+  it("returns an empty list when nothing is paired", async () => {
+    const kv = makeKv()
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const res = await app.request(
+      "/api/pair/apps",
+      { headers: { Authorization: `Bearer ${owner}` } },
+      env(kv),
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ success: true, apps: [] })
+  })
+
+  it("skips malformed records (non-JSON value, missing pairedAt)", async () => {
+    const kv = makeKv({
+      [PAIR_APP_PREFIX + "good"]: { appId: "good", pairedAt: 300, revoked: false },
+      [PAIR_APP_PREFIX + "junk"]: "not-json",
+      [PAIR_APP_PREFIX + "partial"]: { appId: "partial" },
+    })
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const res = await app.request(
+      "/api/pair/apps",
+      { headers: { Authorization: `Bearer ${owner}` } },
+      env(kv),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { apps: { appId: string }[] }
+    expect(body.apps.map((a) => a.appId)).toEqual(["good"])
+  })
+
+  it("walks multiple KV list pages via cursor", async () => {
+    const kv = makeKv(
+      {
+        [PAIR_APP_PREFIX + "a"]: { appId: "a", pairedAt: 1, revoked: false },
+        [PAIR_APP_PREFIX + "b"]: { appId: "b", pairedAt: 2, revoked: false },
+        [PAIR_APP_PREFIX + "c"]: { appId: "c", pairedAt: 3, revoked: false },
+      },
+      1, // one key per list page -> cursor loop must iterate 3 times
+    )
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const res = await app.request(
+      "/api/pair/apps",
+      { headers: { Authorization: `Bearer ${owner}` } },
+      env(kv),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { apps: { appId: string }[] }
+    expect(body.apps.map((a) => a.appId)).toEqual(["c", "b", "a"])
+  })
+
+  it("end-to-end: issue -> redeem -> revoke -> listed as revoked", async () => {
+    const kv = makeKv()
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const { claimCode } = await issue(app, kv, owner)
+    const redeem = await app.request(
+      "/api/pair/redeem",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claimCode }),
+      },
+      env(kv),
+    )
+    const { appId } = (await redeem.json()) as { appId: string }
+    await app.request(
+      "/api/pair/revoke",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${owner}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ appId }),
+      },
+      env(kv),
+    )
+
+    const res = await app.request(
+      "/api/pair/apps",
+      { headers: { Authorization: `Bearer ${owner}` } },
+      env(kv),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      apps: { appId: string; pairedAt: number; revoked: boolean }[]
+    }
+    expect(body.apps).toHaveLength(1)
+    expect(body.apps[0]).toMatchObject({ appId, revoked: true })
+    expect(body.apps[0].pairedAt).toBeTypeOf("number")
   })
 })
 

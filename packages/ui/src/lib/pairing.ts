@@ -7,12 +7,21 @@
  * fetch (Worker logs and link-preview bots stay code-free).
  */
 
+import { apiFetch } from "@/lib/auth"
+
 /** Response body of `POST /api/pair/issue` (owner Bearer). expiresAt is unix seconds. */
 export interface PairIssueResponse {
   success: boolean
   claimCode: string
   workerUrl: string
   expiresAt: number
+}
+
+/** A paired-device record from `GET /api/pair/apps`. pairedAt is unix seconds. */
+export interface PairedApp {
+  appId: string
+  pairedAt: number
+  revoked: boolean
 }
 
 /**
@@ -51,4 +60,27 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/** GET /api/pair/apps (owner Bearer attached by apiFetch). */
+export async function listPairedApps(): Promise<{
+  success: boolean
+  apps?: PairedApp[]
+  error?: string
+}> {
+  const res = await apiFetch("/api/pair/apps")
+  return res.json()
+}
+
+/** POST /api/pair/revoke (owner Bearer). */
+export async function revokeApp(appId: string): Promise<{
+  success: boolean
+  error?: string
+}> {
+  const res = await apiFetch("/api/pair/revoke", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ appId }),
+  })
+  return res.json()
 }
