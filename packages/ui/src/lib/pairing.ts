@@ -69,6 +69,9 @@ export async function listPairedApps(): Promise<{
   error?: string
 }> {
   const res = await apiFetch("/api/pair/apps")
+  // res.ok guard: a platform-level 5xx can carry a non-JSON body (HTML error
+  // page), where res.json() would throw and read as a network error instead.
+  if (!res.ok) return { success: false, error: `Request failed (${res.status})` }
   return res.json()
 }
 
@@ -82,5 +85,6 @@ export async function revokeApp(appId: string): Promise<{
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ appId }),
   })
+  if (!res.ok) return { success: false, error: `Request failed (${res.status})` }
   return res.json()
 }

@@ -177,10 +177,16 @@ pairRoutes.get("/apps", async (c) => {
   let cursor: string | undefined
   for (;;) {
     const page = await c.env.CONFIG.list({ prefix: PAIR_APP_PREFIX, cursor })
-    for (const { name } of page.keys) {
-      const rec = (await c.env.CONFIG.get(name, "json")) as
-        | { appId?: unknown; pairedAt?: unknown; revoked?: unknown }
-        | null
+    // Keys within a page are independent — fetch in parallel so N records
+    // cost one KV-read round trip, not N serial awaits.
+    const records = await Promise.all(
+      page.keys.map(({ name }) =>
+        c.env.CONFIG.get(name, "json") as Promise<
+          { appId?: unknown; pairedAt?: unknown; revoked?: unknown } | null
+        >,
+      ),
+    )
+    for (const rec of records) {
       if (
         rec &&
         typeof rec.appId === "string" &&
