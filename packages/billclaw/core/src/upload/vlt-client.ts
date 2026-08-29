@@ -7,6 +7,13 @@
  * @packageDocumentation
  */
 
+import type {
+  AccountListResponseDto,
+  AccountResponseDto,
+  CreateExternalAccountLinkDto,
+  ExternalAccountLinkListResponseDto,
+  ExternalAccountLinkResponseDto,
+} from "@firela/api-types"
 import type { Logger } from "../errors/errors.js"
 import type { VltRegion } from "../models/config.js"
 import { calculateBackoffDelay } from "../utils/backoff.js"
@@ -307,6 +314,96 @@ export class VltClient {
     } finally {
       clearTimeout(timeoutId)
     }
+  }
+
+  /**
+   * Assert a VLT response succeeded.
+   *
+   * requestWithRetry returns non-retryable 4xx responses instead of throwing,
+   * so callers must check before parsing — otherwise an error body would be
+   * cast to a success DTO.
+   */
+  private async assertOk(response: Response, action: string): Promise<void> {
+    if (response.ok) return
+    let detail = response.statusText
+    try {
+      detail = (await response.text()) || response.statusText
+    } catch {
+      // keep statusText
+    }
+    throw new Error(`VLT ${action} failed (${response.status}): ${detail}`)
+  }
+
+  /**
+   * List the user's active external account links (ADR-0113 P1, issue #18).
+   *
+   * @param provider - Provider filter (whitelist value, e.g. "plaid")
+   */
+  async listExternalAccountLinks(
+    provider: string,
+  ): Promise<ExternalAccountLinkListResponseDto> {
+    const response = await this.requestWithRetry(
+      `/bean/external-account-links?provider=${encodeURIComponent(provider)}`,
+      { method: "GET" },
+    )
+    await this.assertOk(response, "list external account links")
+    return (await response.json()) as ExternalAccountLinkListResponseDto
+  }
+
+  /**
+   * Create an external account → BeanAccount mapping (opaque ids only —
+   * account names/masks/credentials never leave billclaw per ADR-0113).
+   *
+   * Remapping is DELETE then POST (vlt semantics; no replacedById chain).
+   */
+  async createExternalAccountLink(
+    link: CreateExternalAccountLinkDto,
+  ): Promise<ExternalAccountLinkResponseDto> {
+    const response = await this.requestWithRetry(
+      "/bean/external-account-links",
+      { method: "POST", body: JSON.stringify(link) },
+    )
+    await this.assertOk(response, "create external account link")
+    return (await response.json()) as ExternalAccountLinkResponseDto
+  }
+
+  /**
+   * Soft-delete an external account link (isActive=false; history preserved).
+   */
+  async deleteExternalAccountLink(id: string): Promise<void> {
+    const response = await this.requestWithRetry(
+      `/bean/external-account-links/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    )
+    // 204 No Content — no body to parse
+    await this.assertOk(response, "delete external account link")
+  }
+
+  /**
+   * List the user's BeanAccounts (mapping targets for the connect flow).
+   *
+   * Paginates at the schema max page size — the endpoint default (limit=100)
+   * would silently truncate larger charts.
+   */
+  async listBeanAccounts(): Promise<AccountResponseDto[]> {
+    const pageSize = 500
+    const accounts: AccountResponseDto[] = []
+    let offset = 0
+    let total = Number.POSITIVE_INFINITY
+    while (accounts.length < total) {
+      const response = await this.requestWithRetry(
+        `/bean/accounts?limit=${pageSize}&offset=${offset}`,
+        { method: "GET" },
+      )
+      await this.assertOk(response, "list bean accounts")
+      const page = (await response.json()) as AccountListResponseDto
+      accounts.push(...page.items)
+      total = page.total
+      offset += pageSize
+      // Guard against a server that ignores offset (prevents an infinite loop)
+      if (page.items.length === 0) break
+    }
+    return accounts
   }
 
   /**
