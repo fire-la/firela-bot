@@ -5,7 +5,7 @@
  * Includes service toggle state management and route protection.
  */
 import { BrowserRouter, Routes, Route } from "react-router-dom"
-import { Link2, RefreshCw, Download, Cloud, Webhook, Settings } from "lucide-react"
+import { Link2, RefreshCw, Download, Cloud, Webhook, Settings, QrCode } from "lucide-react"
 import { getLogo } from "@/helpers"
 import { ServiceStateProvider } from "@/contexts/ServiceStateContext"
 import { ThemeProvider } from "@/context/Theme"
@@ -17,6 +17,7 @@ import { ExportPage } from "@/components/pages/ExportPage"
 import { VltPage } from "@/components/pages/VltPage"
 import { WebhooksPage } from "@/components/pages/WebhooksPage"
 import { SettingsPage } from "@/components/pages/SettingsPage"
+import { PairAppPage } from "@/components/pages/PairAppPage"
 import { AuthSetupPage } from "@/components/pages/AuthSetupPage"
 import { PlaidConnectPage } from "@/components/pages/PlaidConnectPage"
 import { GmailConnectPage } from "@/components/pages/GmailConnectPage"
@@ -32,6 +33,7 @@ const billclawMenuItems = [
     items: [
       { text: "Connect", itemKey: "connect", to: "/connect", icon: Link2 },
       { text: "Sync", itemKey: "sync", to: "/sync", icon: RefreshCw },
+      { text: "Pair app", itemKey: "pair", to: "/pair", icon: QrCode },
     ],
   },
   {
@@ -51,7 +53,7 @@ const billclawMenuItems = [
 ]
 
 /** Nav item keys whose API calls 403 under an app token (dead-end affordances). */
-const OWNER_ONLY_NAV_KEYS = new Set(["connect", "export", "vlt", "webhooks", "settings"])
+const OWNER_ONLY_NAV_KEYS = new Set(["connect", "export", "vlt", "webhooks", "settings", "pair"])
 
 /**
  * Sidebar menu filtered by role. The `app` role (firela-app WebView) can only
@@ -143,6 +145,16 @@ export function App() {
               <ProtectedRoute serviceId="billclaw">
                 <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
                   <SettingsPage />
+                </PageLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pair"
+            element={
+              <ProtectedRoute serviceId="billclaw">
+                <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
+                  <PairAppPage />
                 </PageLayout>
               </ProtectedRoute>
             }
