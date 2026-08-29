@@ -1,17 +1,24 @@
 /**
  * Pairing Helpers
  *
- * Claim-code generation and app-JWT signing for Plex-style pairing (ADR-009).
- * Reuses the ADR-008 HS256 + KV-secret auth infrastructure — the same
- * `ensureAuthSecret` + `hono/jwt` `sign()` that `/auth/setup` uses for owner
- * tokens. No second signing key.
+ * Claim-code generation, the D1 claim store, and app-JWT signing for Plex-style
+ * pairing (ADR-009). Claims are a single-use state machine (`pending -> used`,
+ * TTL-bounded) and live in D1: the atomic conditional UPDATE that single-use
+ * requires has no KV equivalent (issue #24). JWT signing reuses the ADR-008
+ * HS256 + KV-secret auth infrastructure — the same `ensureAuthSecret` +
+ * `hono/jwt` `sign()` that `/auth/setup` uses for owner tokens. No second
+ * signing key.
  *
  * @packageDocumentation
  */
 
 import { sign } from "hono/jwt"
 import { ensureAuthSecret } from "./auth-helpers.js"
-import { PAIR_CLAIM_PREFIX, PAIR_CLAIM_TTL_SEC, PAIR_TOKEN_TTL_SEC } from "../constants.js"
+import {
+  PAIR_CLAIM_PRUNE_GRACE_SEC,
+  PAIR_CLAIM_TTL_SEC,
+  PAIR_TOKEN_TTL_SEC,
+} from "../constants.js"
 
 /** Crockford Base32 alphabet (excludes I/L/O/U to limit human-entry ambiguity). */
 const CLAIM_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -51,23 +58,68 @@ export function normalizeClaimCode(input: string): string {
     .replace(/[IL]/g, "1")
 }
 
+/** D1 schema for the claim store — lazily created, once per isolate. */
+const PAIR_CLAIM_CREATE_SQL = `
+  CREATE TABLE IF NOT EXISTS pair_claim (
+    code        TEXT PRIMARY KEY,
+    status      TEXT NOT NULL DEFAULT 'pending',
+    origin      TEXT,
+    created_at  INTEGER NOT NULL,
+    app_id      TEXT,
+    redeemed_at INTEGER
+  )
+`
+
+/** Module-level guard: the CREATE IF NOT EXISTS only pays once per isolate. */
+let pairClaimTableReady = false
+
+/**
+ * Idempotently create the claim table. Called from mint, redeem, and the
+ * bootstrap claim read — a fresh deployment (or trial D1) must answer a bogus
+ * redeem with 404, not a "no such table" 500.
+ */
+export async function ensurePairClaimTable(db: D1Database): Promise<void> {
+  if (pairClaimTableReady) return
+  await db.prepare(PAIR_CLAIM_CREATE_SQL).run()
+  pairClaimTableReady = true
+}
+
+/**
+ * Lazy TTL replacement: D1 has no expirationTtl, so expired rows are deleted
+ * with a grace buffer once they can no longer matter (pending past TTL is
+ * dead for redeem; used past TTL+grace matches the old KV behavior where the
+ * key simply vanished). Rides on mint only — owner-rare and bootstrap mints
+ * at most one per claim TTL — never on the public redeem or GET / hot path.
+ */
+export async function pruneExpiredPairClaims(db: D1Database): Promise<void> {
+  const cutoff = nowSec() - PAIR_CLAIM_TTL_SEC - PAIR_CLAIM_PRUNE_GRACE_SEC
+  await db
+    .prepare("DELETE FROM pair_claim WHERE created_at < ?1")
+    .bind(cutoff)
+    .run()
+}
+
 /**
  * Mint a single-use pending claim — the ONE mint path shared by
  * POST /api/pair/issue (owner dashboard) and the first-run bootstrap surface
- * (issue #21), so the KV shape + TTL cannot drift between them. `extra`
- * fields merge into the stored record (bootstrap passes `origin`).
+ * (issue #21), so the stored shape + TTL semantics cannot drift between them.
+ * `origin` marks the mint source (bootstrap passes "bootstrap"; owner mints
+ * store NULL).
  */
 export async function mintPendingClaim(
-  kv: KVNamespace,
-  extra: Record<string, unknown> = {},
+  db: D1Database,
+  extra: { origin?: string } = {},
 ): Promise<{ code: string; createdAt: number }> {
+  await ensurePairClaimTable(db)
+  await pruneExpiredPairClaims(db)
   const code = generateClaimCode()
   const createdAt = nowSec()
-  await kv.put(
-    PAIR_CLAIM_PREFIX + code,
-    JSON.stringify({ status: "pending", createdAt, ...extra }),
-    { expirationTtl: PAIR_CLAIM_TTL_SEC },
-  )
+  await db
+    .prepare(
+      "INSERT INTO pair_claim (code, status, origin, created_at) VALUES (?1, ?2, ?3, ?4)",
+    )
+    .bind(code, "pending", extra.origin ?? null, createdAt)
+    .run()
   return { code, createdAt }
 }
 

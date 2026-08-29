@@ -26,16 +26,25 @@ export const RELAY_API_KEY_KEY = "firela:relay:api_key"
 export const CF_API_TOKEN_KEY = "firela:cloudflare:api_token"
 
 /**
- * App pairing (ADR-009) — KV key prefixes and TTLs.
+ * App pairing (ADR-009) — storage split (issue #24).
  *
- * PAIR_CLAIM_PREFIX + claimCode -> { status, createdAt, appId? }  (short-lived claim)
- * PAIR_APP_PREFIX   + appId     -> { appId, pairedAt, revoked }   (revocation record)
+ * Claims live in the D1 `pair_claim` table (code PK, status, origin, created_at,
+ * app_id, redeemed_at): a single-use state machine needs the atomic conditional
+ * UPDATE KV cannot offer. KV keeps only the long-lived per-request-read records:
+ *   PAIR_APP_PREFIX + appId -> { appId, pairedAt, revoked }  (revocation record)
  */
-export const PAIR_CLAIM_PREFIX = "firela:pair:claim:"
 export const PAIR_APP_PREFIX = "firela:pair:app:"
 
-/** Lifetime of an unclaimed pairing claim code (seconds). */
+/**
+ * Lifetime of an unclaimed pairing claim code (seconds). Enforced as a
+ * `created_at` cutoff in the redeem UPDATE and the prune DELETE, and checked
+ * in code at the bootstrap claim read; D1 has no TTL-on-entry — this replaces
+ * the old KV expirationTtl.
+ */
 export const PAIR_CLAIM_TTL_SEC = 600
+
+/** Lazy-prune grace beyond the claim TTL before D1 rows are deleted (seconds). */
+export const PAIR_CLAIM_PRUNE_GRACE_SEC = 3600
 
 /** Lifetime of a signed app pairing token — 1 year (matches the owner token). */
 export const PAIR_TOKEN_TTL_SEC = 365 * 24 * 60 * 60

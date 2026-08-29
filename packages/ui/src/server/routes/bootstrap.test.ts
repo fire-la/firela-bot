@@ -15,10 +15,10 @@ import { describe, it, expect } from "vitest"
 import { Hono } from "hono"
 
 import { bootstrapRoutes } from "./bootstrap.js"
+import { makeD1 } from "../../test/fake-d1.js"
 import {
   PAIR_BOOTSTRAP_CURRENT_KEY,
   PAIR_BOOTSTRAP_DONE_KEY,
-  PAIR_CLAIM_PREFIX,
   PAIR_CLAIM_TTL_SEC,
   SETUP_PASSWORD_KEY,
 } from "../constants.js"
@@ -68,8 +68,8 @@ function bootstrapApp(notFound?: (c: never) => Response | Promise<Response>) {
   return app
 }
 
-function env(kv: ReturnType<typeof makeKv>) {
-  return { CONFIG: kv } as never
+function env(kv: ReturnType<typeof makeKv>, db: ReturnType<typeof makeD1>) {
+  return { CONFIG: kv, DB: db } as never
 }
 
 const GROUPED_RE = /^[0-9A-HJ-NP-Z]{4}-[0-9A-HJ-NP-Z]{4}$/ // Crockford: no I, L, O, U
@@ -78,13 +78,14 @@ const GROUPED_RE = /^[0-9A-HJ-NP-Z]{4}-[0-9A-HJ-NP-Z]{4}$/ // Crockford: no I, L
 function rawCodeFromBody(body: string): string {
   const m = body.match(/\/pair#code=([0-9A-HJ-NP-Z]{8})/)
   if (!m) throw new Error("no pairing link in body")
-  return m[1]
+  return m[1]!
 }
 
 describe("GET / — fresh deployment", () => {
   it("renders the pairing page: text/html, no-store, link + code + inline QR, zero scripts/external resources", async () => {
     const kv = makeKv()
-    const res = await bootstrapApp().request("/", undefined, env(kv))
+    const db = makeD1()
+    const res = await bootstrapApp().request("/", undefined, env(kv, db))
     expect(res.status).toBe(200)
     expect(res.headers.get("content-type")).toMatch(/^text\/html/)
     expect(res.headers.get("cache-control")).toBe("no-store")
@@ -105,15 +106,12 @@ describe("GET / — fresh deployment", () => {
     expect(body).not.toMatch(/<(link|img)\b/i)
     expect(body).not.toMatch(/\ssrc=/)
 
-    // Claim stored pending with the claim TTL; pointer written with the same TTL.
+    // Claim stored pending in D1 with the bootstrap origin; pointer written
+    // to KV with the claim TTL.
     const raw = rawCodeFromBody(body)
     expect(grouped.replace("-", "")).toBe(raw)
-    const claim = JSON.parse(kv._raw(PAIR_CLAIM_PREFIX + raw)!)
-    expect(claim).toMatchObject({ status: "pending", origin: "bootstrap" })
-    expect(typeof claim.createdAt).toBe("number")
-    expect(kv._puts.find((p) => p.key === PAIR_CLAIM_PREFIX + raw)?.ttl).toBe(
-      PAIR_CLAIM_TTL_SEC,
-    )
+    expect(db._row(raw)).toMatchObject({ status: "pending", origin: "bootstrap" })
+    expect(db._row(raw)!.created_at).toBeTypeOf("number")
     expect(kv._raw(PAIR_BOOTSTRAP_CURRENT_KEY)).toBe(raw)
     expect(
       kv._puts.find((p) => p.key === PAIR_BOOTSTRAP_CURRENT_KEY)?.ttl,
@@ -122,47 +120,41 @@ describe("GET / — fresh deployment", () => {
 
   it("refresh reuses the still-pending claim — no second mint", async () => {
     const kv = makeKv()
+    const db = makeD1()
     const app = bootstrapApp()
-    const first = await app.request("/", undefined, env(kv))
+    const first = await app.request("/", undefined, env(kv, db))
     const code1 = rawCodeFromBody(await first.text())
-    const second = await app.request("/", undefined, env(kv))
+    const second = await app.request("/", undefined, env(kv, db))
     const code2 = rawCodeFromBody(await second.text())
     expect(code2).toBe(code1)
-    expect(
-      kv._puts.filter((p) => p.key.startsWith(PAIR_CLAIM_PREFIX)).length,
-    ).toBe(1)
+    expect(db._rows()).toHaveLength(1)
   })
 })
 
 describe("GET / — stale pointer re-mints", () => {
   const now = Math.floor(Date.now() / 1000)
 
-  it("expired pending claim (createdAt beyond TTL) -> new code", async () => {
-    const kv = makeKv({
-      [PAIR_BOOTSTRAP_CURRENT_KEY]: "ABCD2345",
-      [`${PAIR_CLAIM_PREFIX}ABCD2345`]: {
-        status: "pending",
-        createdAt: now - PAIR_CLAIM_TTL_SEC - 100,
-      },
+  it("expired pending claim (created_at beyond TTL) -> new code", async () => {
+    const kv = makeKv({ [PAIR_BOOTSTRAP_CURRENT_KEY]: "ABCD2345" })
+    const db = makeD1({
+      ABCD2345: { created_at: now - PAIR_CLAIM_TTL_SEC - 100 },
     })
-    const res = await bootstrapApp().request("/", undefined, env(kv))
+    const res = await bootstrapApp().request("/", undefined, env(kv, db))
     const code = rawCodeFromBody(await res.text())
     expect(code).not.toBe("ABCD2345")
     expect(kv._raw(PAIR_BOOTSTRAP_CURRENT_KEY)).toBe(code)
   })
 
-  it("used claim (KV eventual-consistency window) -> new code", async () => {
-    const kv = makeKv({
-      [PAIR_BOOTSTRAP_CURRENT_KEY]: "ABCD2345",
-      [`${PAIR_CLAIM_PREFIX}ABCD2345`]: { status: "used", createdAt: now },
-    })
-    const res = await bootstrapApp().request("/", undefined, env(kv))
+  it("used claim -> new code", async () => {
+    const kv = makeKv({ [PAIR_BOOTSTRAP_CURRENT_KEY]: "ABCD2345" })
+    const db = makeD1({ ABCD2345: { status: "used", created_at: now } })
+    const res = await bootstrapApp().request("/", undefined, env(kv, db))
     expect(rawCodeFromBody(await res.text())).not.toBe("ABCD2345")
   })
 
-  it("pruned claim (pointer outlived the claim key) -> new code", async () => {
+  it("pruned claim (pointer outlived the claim row) -> new code", async () => {
     const kv = makeKv({ [PAIR_BOOTSTRAP_CURRENT_KEY]: "ABCD2345" })
-    const res = await bootstrapApp().request("/", undefined, env(kv))
+    const res = await bootstrapApp().request("/", undefined, env(kv, makeD1()))
     expect(rawCodeFromBody(await res.text())).not.toBe("ABCD2345")
   })
 })
@@ -172,7 +164,7 @@ describe("GET / — closed surface delegates to notFound (SPA fallback)", () => 
     const kv = makeKv({
       [PAIR_BOOTSTRAP_DONE_KEY]: { appId: "x", completedAt: 1 },
     })
-    const res = await bootstrapApp().request("/", undefined, env(kv))
+    const res = await bootstrapApp().request("/", undefined, env(kv, makeD1()))
     expect(res.status).toBe(404)
     expect(await res.text()).toBe("404 Not Found")
     // No mint may happen on a closed surface.
@@ -189,7 +181,7 @@ describe("GET / — closed surface delegates to notFound (SPA fallback)", () => 
         headers: { "content-type": "text/html" },
       }),
     )
-    const res = await app.request("/", undefined, env(kv))
+    const res = await app.request("/", undefined, env(kv, makeD1()))
     expect(res.status).toBe(200)
     expect(res.headers.get("content-type")).toMatch(/^text\/html/)
     expect(await res.text()).toContain("spa")
@@ -197,7 +189,7 @@ describe("GET / — closed surface delegates to notFound (SPA fallback)", () => 
 
   it("setup password set (owner exists) -> falls through", async () => {
     const kv = makeKv({ [SETUP_PASSWORD_KEY]: "hunter2" })
-    const res = await bootstrapApp().request("/", undefined, env(kv))
+    const res = await bootstrapApp().request("/", undefined, env(kv, makeD1()))
     expect(res.status).toBe(404)
     expect(kv._puts.length).toBe(0)
   })

@@ -29,47 +29,52 @@ import type { Env } from "../index.js"
 import {
   PAIR_BOOTSTRAP_CURRENT_KEY,
   PAIR_BOOTSTRAP_DONE_KEY,
-  PAIR_CLAIM_PREFIX,
   PAIR_CLAIM_TTL_SEC,
   SETUP_PASSWORD_KEY,
 } from "../constants.js"
-import { mintPendingClaim, nowSec } from "../lib/pair-helpers.js"
+import {
+  ensurePairClaimTable,
+  mintPendingClaim,
+  nowSec,
+} from "../lib/pair-helpers.js"
 
 export const bootstrapRoutes = new Hono<{ Bindings: Env }>()
 
 /**
  * Return the still-pending bootstrap claim, minting a new one only when the
- * current pointer is stale (claim used, expired, or pruned). Keeps KV writes
+ * current pointer is stale (claim used, expired, or pruned). Keeps writes
  * bounded (~1 mint per claim TTL per fresh deployment) and lets the user
  * refresh the page without invalidating the code they are typing.
  *
  * NOTE: read-then-write race — concurrent first requests can mint multiple
- * pending claims. Accepted as the same class as the no-CAS redeem race
- * (ADR-009 D2): every code is single-use, 600s-TTL, and GET / is public
+ * pending claims. Harmless on its own terms: every code is single-use (the
+ * redeem flip is atomic in D1, issue #24), 600s-TTL, and GET / is public
  * anyway (anyone can mint one for themselves), so the race grants no
  * capability beyond the documented first-caller model.
  */
 async function currentOrNewClaim(
   kv: KVNamespace,
+  db: D1Database,
 ): Promise<{ code: string; createdAt: number }> {
   const existing = await kv.get(PAIR_BOOTSTRAP_CURRENT_KEY)
   if (existing) {
-    const claim = (await kv.get(PAIR_CLAIM_PREFIX + existing, "json")) as
-      | { status?: string; createdAt?: number }
-      | null
+    await ensurePairClaimTable(db)
+    const claim = await db
+      .prepare("SELECT status, created_at FROM pair_claim WHERE code = ?1")
+      .bind(existing)
+      .first<{ status: string; created_at: number } | null>()
     if (
       claim?.status === "pending" &&
-      typeof claim.createdAt === "number" &&
-      claim.createdAt + PAIR_CLAIM_TTL_SEC > nowSec()
+      claim.created_at + PAIR_CLAIM_TTL_SEC > nowSec()
     ) {
-      return { code: existing, createdAt: claim.createdAt }
+      return { code: existing, createdAt: claim.created_at }
     }
     // Pointer stale — fall through and mint a fresh code.
   }
   // Shared mint path with /api/pair/issue (lib/pair-helpers.ts); the
   // `origin` marker distinguishes the bootstrap source. Pointer TTL matches
   // the claim TTL so it self-prunes with it.
-  const { code, createdAt } = await mintPendingClaim(kv, { origin: "bootstrap" })
+  const { code, createdAt } = await mintPendingClaim(db, { origin: "bootstrap" })
   await kv.put(PAIR_BOOTSTRAP_CURRENT_KEY, code, {
     expirationTtl: PAIR_CLAIM_TTL_SEC,
   })
@@ -88,7 +93,7 @@ bootstrapRoutes.get("/", async (c) => {
   if (await kv.get(SETUP_PASSWORD_KEY)) return c.notFound()
   if (await kv.get(PAIR_BOOTSTRAP_DONE_KEY)) return c.notFound()
 
-  const { code, createdAt } = await currentOrNewClaim(kv)
+  const { code, createdAt } = await currentOrNewClaim(kv, c.env.DB)
   const origin = new URL(c.req.url).origin
   const minutesLeft = Math.max(
     1,

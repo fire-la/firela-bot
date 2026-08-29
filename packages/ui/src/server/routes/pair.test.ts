@@ -4,6 +4,8 @@
  * Covers the claim -> redeem -> revoke state machine, the app JWT contract,
  * claim-code shape, and the TTL-on-put guarantees (Fix A/B). Authz denial of
  * owner-only pair endpoints by an app token lives here too (APP_ROLE_PATH_DENIED).
+ * Claims are exercised against the shared fake D1 (issue #24): the atomic-flip
+ * specs (concurrent redeem, expiry) are the single-use regression tests.
  *
  * @packageDocumentation
  */
@@ -16,11 +18,11 @@ import { pairRoutes } from "./pair.js"
 import { authMiddleware } from "../middleware/auth.js"
 import { ensureAuthSecret } from "../lib/auth-helpers.js"
 import { normalizeClaimCode, generateClaimCode } from "../lib/pair-helpers.js"
+import { makeD1 } from "../../test/fake-d1.js"
 import {
   PAIR_APP_PREFIX,
   PAIR_APP_TTL_SEC,
   PAIR_BOOTSTRAP_DONE_KEY,
-  PAIR_CLAIM_PREFIX,
   PAIR_CLAIM_TTL_SEC,
   PAIR_TOKEN_TTL_SEC,
 } from "../constants.js"
@@ -83,8 +85,8 @@ function pairApp() {
   return app
 }
 
-function env(kv: ReturnType<typeof makeKv>) {
-  return { CONFIG: kv } as never
+function env(kv: ReturnType<typeof makeKv>, db: ReturnType<typeof makeD1>) {
+  return { CONFIG: kv, DB: db } as never
 }
 
 /** Sign a token with the SAME secret authMiddleware will use (auto-seeded into kv). */
@@ -103,12 +105,13 @@ const CLAIM_RE = /^[0-9A-HJ-NP-Z]{8}$/ // Crockford: no I, L, O, U
 async function issue(
   app: ReturnType<typeof pairApp>,
   kv: ReturnType<typeof makeKv>,
+  db: ReturnType<typeof makeD1>,
   token: string,
 ): Promise<{ claimCode: string; expiresAt: number; workerUrl: string }> {
   const res = await app.request(
     "/api/pair/issue",
     { method: "POST", headers: { Authorization: `Bearer ${token}` } },
-    env(kv),
+    env(kv, db),
   )
   expect(res.status).toBe(200)
   return (await res.json()) as { claimCode: string; expiresAt: number; workerUrl: string }
@@ -117,7 +120,7 @@ async function issue(
 describe("POST /api/pair/issue (owner)", () => {
   it("401 without a token", async () => {
     const kv = makeKv()
-    const res = await pairApp().request("/api/pair/issue", { method: "POST" }, env(kv))
+    const res = await pairApp().request("/api/pair/issue", { method: "POST" }, env(kv, makeD1()))
     expect(res.status).toBe(401)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe("AUTH_MISSING")
   })
@@ -129,7 +132,7 @@ describe("POST /api/pair/issue (owner)", () => {
     const res = await app.request(
       "/api/pair/issue",
       { method: "POST", headers: { Authorization: `Bearer ${appToken}` } },
-      env(kv),
+      env(kv, makeD1()),
     )
     expect(res.status).toBe(403)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
@@ -137,30 +140,39 @@ describe("POST /api/pair/issue (owner)", () => {
     )
   })
 
-  it("mints an 8-char Crockford code, stored pending with the claim TTL", async () => {
+  it("mints an 8-char Crockford code, stored pending in D1", async () => {
     const kv = makeKv()
+    const db = makeD1()
     const app = pairApp()
     const owner = await makeToken(kv, "owner", "owner")
 
-    const body = await issue(app, kv, owner)
+    const body = await issue(app, kv, db, owner)
     expect(body.claimCode).toMatch(CLAIM_RE)
     expect(body.workerUrl).toMatch(/^https?:\/\//) // origin derived from c.req.url
-    const claim = JSON.parse(kv._raw(PAIR_CLAIM_PREFIX + body.claimCode)!)
-    expect(claim.status).toBe("pending")
-    expect(claim.createdAt).toBeTypeOf("number")
-    expect(body.expiresAt).toBe(claim.createdAt + PAIR_CLAIM_TTL_SEC)
+    const claim = db._row(body.claimCode)
+    expect(claim).toMatchObject({ status: "pending", origin: null })
+    expect(claim!.created_at).toBeTypeOf("number")
+    expect(body.expiresAt).toBe(claim!.created_at + PAIR_CLAIM_TTL_SEC)
+  })
 
-    const claimPuts = kv._puts.filter((p) => p.key.startsWith(PAIR_CLAIM_PREFIX))
-    expect(claimPuts.every((p) => p.ttl === PAIR_CLAIM_TTL_SEC)).toBe(true)
+  it("mint prunes rows older than TTL + grace (lazy D1 cleanup)", async () => {
+    const kv = makeKv()
+    const db = makeD1({ OLDCODE: { created_at: 1 } })
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+
+    await issue(app, kv, db, owner)
+    expect(db._row("OLDCODE")).toBeUndefined()
   })
 })
 
 describe("POST /api/pair/redeem (public, claim-gated)", () => {
   it("redeems a valid claim: app JWT issued, claim flipped to used, record written", async () => {
     const kv = makeKv()
+    const db = makeD1()
     const app = pairApp()
     const owner = await makeToken(kv, "owner", "owner")
-    const { claimCode } = await issue(app, kv, owner)
+    const { claimCode } = await issue(app, kv, db, owner)
 
     const res = await app.request(
       "/api/pair/redeem",
@@ -169,16 +181,16 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claimCode }),
       },
-      env(kv),
+      env(kv, db),
     )
     expect(res.status).toBe(200)
     const body = (await res.json()) as { pairingToken: string; appId: string; workerUrl: string }
     expect(body.pairingToken.split(".").length).toBe(3) // well-formed JWT
     expect(body.appId).toMatch(/^[0-9a-f-]{36}$/) // server-generated UUID
 
-    const used = JSON.parse(kv._raw(PAIR_CLAIM_PREFIX + claimCode)!)
-    expect(used.status).toBe("used")
-    expect(used.appId).toBe(body.appId)
+    const used = db._row(claimCode)
+    expect(used).toMatchObject({ status: "used", app_id: body.appId })
+    expect(used?.redeemed_at).toBeTypeOf("number")
     const rec = JSON.parse(kv._raw(PAIR_APP_PREFIX + body.appId)!)
     expect(rec).toMatchObject({ appId: body.appId, revoked: false })
 
@@ -192,11 +204,49 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
     ).toBeUndefined()
   })
 
-  it("redeemed token reaches the allowlisted sync routes", async () => {
+  it("concurrent redeems of one claim: exactly one wins the atomic flip (issue #24)", async () => {
     const kv = makeKv()
+    const db = makeD1()
     const app = pairApp()
     const owner = await makeToken(kv, "owner", "owner")
-    const { claimCode } = await issue(app, kv, owner)
+    const { claimCode } = await issue(app, kv, db, owner)
+
+    // Two in-flight redeems — the no-CAS KV sequence let BOTH of these mint a
+    // 1y JWT; the conditional D1 UPDATE must serialize them to 200 + 409.
+    const [a, b] = await Promise.all(
+      [0, 1].map(() =>
+        app.request(
+          "/api/pair/redeem",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ claimCode }),
+          },
+          env(kv, db),
+        ),
+      ),
+    )
+    expect([a.status, b.status].sort()).toEqual([200, 409])
+    const winner = a.status === 200 ? a : b
+    const loser = a.status === 200 ? b : a
+    const winBody = (await winner.json()) as { appId: string }
+    expect(((await loser.json()) as { errorCode: string }).errorCode).toBe(
+      "CLAIM_ALREADY_USED",
+    )
+
+    // Exactly one app record, one bootstrap-done flag, and the flipped row
+    // carries the winner's appId (the loser's UUID is discarded).
+    expect(kv._puts.filter((p) => p.key.startsWith(PAIR_APP_PREFIX))).toHaveLength(1)
+    expect(kv._puts.filter((p) => p.key === PAIR_BOOTSTRAP_DONE_KEY)).toHaveLength(1)
+    expect(db._row(claimCode)?.app_id).toBe(winBody.appId)
+  })
+
+  it("redeemed token reaches the allowlisted sync routes", async () => {
+    const kv = makeKv()
+    const db = makeD1()
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const { claimCode } = await issue(app, kv, db, owner)
     const redeem = await app.request(
       "/api/pair/redeem",
       {
@@ -204,29 +254,30 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claimCode }),
       },
-      env(kv),
+      env(kv, db),
     )
     const { pairingToken } = (await redeem.json()) as { pairingToken: string }
 
     const run = await app.request(
       "/api/sync/run",
       { method: "POST", headers: { Authorization: `Bearer ${pairingToken}` } },
-      env(kv),
+      env(kv, db),
     )
     expect(run.status).toBe(200)
     const status = await app.request(
       "/api/sync/status",
       { headers: { Authorization: `Bearer ${pairingToken}` } },
-      env(kv),
+      env(kv, db),
     )
     expect(status.status).toBe(200)
   })
 
   it("second redeem of the same claim -> 409 CLAIM_ALREADY_USED", async () => {
     const kv = makeKv()
+    const db = makeD1()
     const app = pairApp()
     const owner = await makeToken(kv, "owner", "owner")
-    const { claimCode } = await issue(app, kv, owner)
+    const { claimCode } = await issue(app, kv, db, owner)
 
     const first = await app.request(
       "/api/pair/redeem",
@@ -235,7 +286,7 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claimCode }),
       },
-      env(kv),
+      env(kv, db),
     )
     expect(first.status).toBe(200)
 
@@ -246,7 +297,7 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claimCode }),
       },
-      env(kv),
+      env(kv, db),
     )
     expect(second.status).toBe(409)
     expect(((await second.json()) as { errorCode: string }).errorCode).toBe(
@@ -263,7 +314,26 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claimCode: "NOPE0000" }),
       },
-      env(kv),
+      env(kv, makeD1()),
+    )
+    expect(res.status).toBe(404)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "CLAIM_NOT_FOUND",
+    )
+  })
+
+  it("pending claim past the TTL cutoff -> 404 CLAIM_NOT_FOUND (not 409)", async () => {
+    const kv = makeKv()
+    const expired = Math.floor(Date.now() / 1000) - PAIR_CLAIM_TTL_SEC - 1
+    const db = makeD1({ ABCD2345: { created_at: expired } })
+    const res = await pairApp().request(
+      "/api/pair/redeem",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claimCode: "ABCD2345" }),
+      },
+      env(kv, db),
     )
     expect(res.status).toBe(404)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
@@ -273,9 +343,10 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
 
   it("normalizes an ambiguously-typed claim code (O->0, I/L->1, lowercase)", async () => {
     const kv = makeKv()
+    const db = makeD1()
     const app = pairApp()
     const owner = await makeToken(kv, "owner", "owner")
-    const { claimCode } = await issue(app, kv, owner)
+    const { claimCode } = await issue(app, kv, db, owner)
     // Mangle every ambiguous char the user could mis-type
     const mangled = claimCode
       .replace(/0/g, "O")
@@ -289,7 +360,7 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claimCode: mangled }),
       },
-      env(kv),
+      env(kv, db),
     )
     expect(res.status).toBe(200)
   })
@@ -298,9 +369,10 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
 describe("POST /api/pair/revoke (owner)", () => {
   it("revokes a paired app; the app token is then rejected as AUTH_REVOKED", async () => {
     const kv = makeKv()
+    const db = makeD1()
     const app = pairApp()
     const owner = await makeToken(kv, "owner", "owner")
-    const { claimCode } = await issue(app, kv, owner)
+    const { claimCode } = await issue(app, kv, db, owner)
     const redeem = await app.request(
       "/api/pair/redeem",
       {
@@ -308,7 +380,7 @@ describe("POST /api/pair/revoke (owner)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claimCode }),
       },
-      env(kv),
+      env(kv, db),
     )
     const { pairingToken, appId } = (await redeem.json()) as { pairingToken: string; appId: string }
 
@@ -319,14 +391,14 @@ describe("POST /api/pair/revoke (owner)", () => {
         headers: { Authorization: `Bearer ${owner}`, "Content-Type": "application/json" },
         body: JSON.stringify({ appId }),
       },
-      env(kv),
+      env(kv, db),
     )
     expect(revoke.status).toBe(200)
 
     const after = await app.request(
       "/api/sync/status",
       { headers: { Authorization: `Bearer ${pairingToken}` } },
-      env(kv),
+      env(kv, db),
     )
     expect(after.status).toBe(401)
     expect(((await after.json()) as { errorCode: string }).errorCode).toBe("AUTH_REVOKED")
@@ -343,7 +415,7 @@ describe("POST /api/pair/revoke (owner)", () => {
         headers: { Authorization: `Bearer ${owner}`, "Content-Type": "application/json" },
         body: JSON.stringify({ appId: "ghost" }),
       },
-      env(kv),
+      env(kv, makeD1()),
     )
     expect(res.status).toBe(404)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe("APP_NOT_PAIRED")
@@ -353,7 +425,7 @@ describe("POST /api/pair/revoke (owner)", () => {
 describe("GET /api/pair/apps (owner)", () => {
   it("401 without a token", async () => {
     const kv = makeKv()
-    const res = await pairApp().request("/api/pair/apps", {}, env(kv))
+    const res = await pairApp().request("/api/pair/apps", {}, env(kv, makeD1()))
     expect(res.status).toBe(401)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe("AUTH_MISSING")
   })
@@ -365,7 +437,7 @@ describe("GET /api/pair/apps (owner)", () => {
     const res = await app.request(
       "/api/pair/apps",
       { headers: { Authorization: `Bearer ${appToken}` } },
-      env(kv),
+      env(kv, makeD1()),
     )
     expect(res.status).toBe(403)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
@@ -373,18 +445,17 @@ describe("GET /api/pair/apps (owner)", () => {
     )
   })
 
-  it("lists paired apps newest-first with revoked flags, claim keys excluded", async () => {
+  it("lists paired apps newest-first with revoked flags", async () => {
     const kv = makeKv({
       [PAIR_APP_PREFIX + "old"]: { appId: "old", pairedAt: 100, revoked: false },
       [PAIR_APP_PREFIX + "new"]: { appId: "new", pairedAt: 200, revoked: true },
-      [PAIR_CLAIM_PREFIX + "ABCD1234"]: { status: "pending", createdAt: 1 },
     })
     const app = pairApp()
     const owner = await makeToken(kv, "owner", "owner")
     const res = await app.request(
       "/api/pair/apps",
       { headers: { Authorization: `Bearer ${owner}` } },
-      env(kv),
+      env(kv, makeD1()),
     )
     expect(res.status).toBe(200)
     const body = (await res.json()) as {
@@ -404,7 +475,7 @@ describe("GET /api/pair/apps (owner)", () => {
     const res = await app.request(
       "/api/pair/apps",
       { headers: { Authorization: `Bearer ${owner}` } },
-      env(kv),
+      env(kv, makeD1()),
     )
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ success: true, apps: [] })
@@ -421,7 +492,7 @@ describe("GET /api/pair/apps (owner)", () => {
     const res = await app.request(
       "/api/pair/apps",
       { headers: { Authorization: `Bearer ${owner}` } },
-      env(kv),
+      env(kv, makeD1()),
     )
     expect(res.status).toBe(200)
     const body = (await res.json()) as { apps: { appId: string }[] }
@@ -442,7 +513,7 @@ describe("GET /api/pair/apps (owner)", () => {
     const res = await app.request(
       "/api/pair/apps",
       { headers: { Authorization: `Bearer ${owner}` } },
-      env(kv),
+      env(kv, makeD1()),
     )
     expect(res.status).toBe(200)
     const body = (await res.json()) as { apps: { appId: string }[] }
@@ -451,9 +522,10 @@ describe("GET /api/pair/apps (owner)", () => {
 
   it("end-to-end: issue -> redeem -> revoke -> listed as revoked", async () => {
     const kv = makeKv()
+    const db = makeD1()
     const app = pairApp()
     const owner = await makeToken(kv, "owner", "owner")
-    const { claimCode } = await issue(app, kv, owner)
+    const { claimCode } = await issue(app, kv, db, owner)
     const redeem = await app.request(
       "/api/pair/redeem",
       {
@@ -461,7 +533,7 @@ describe("GET /api/pair/apps (owner)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claimCode }),
       },
-      env(kv),
+      env(kv, db),
     )
     const { appId } = (await redeem.json()) as { appId: string }
     await app.request(
@@ -471,13 +543,13 @@ describe("GET /api/pair/apps (owner)", () => {
         headers: { Authorization: `Bearer ${owner}`, "Content-Type": "application/json" },
         body: JSON.stringify({ appId }),
       },
-      env(kv),
+      env(kv, db),
     )
 
     const res = await app.request(
       "/api/pair/apps",
       { headers: { Authorization: `Bearer ${owner}` } },
-      env(kv),
+      env(kv, db),
     )
     expect(res.status).toBe(200)
     const body = (await res.json()) as {
@@ -494,9 +566,10 @@ describe("TTL guarantees (Fix A/B)", () => {
     expect(PAIR_APP_TTL_SEC).toBe(PAIR_TOKEN_TTL_SEC)
 
     const kv = makeKv()
+    const db = makeD1()
     const app = pairApp()
     const owner = await makeToken(kv, "owner", "owner")
-    const { claimCode } = await issue(app, kv, owner)
+    const { claimCode } = await issue(app, kv, db, owner)
     const redeem = await app.request(
       "/api/pair/redeem",
       {
@@ -504,7 +577,7 @@ describe("TTL guarantees (Fix A/B)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claimCode }),
       },
-      env(kv),
+      env(kv, db),
     )
     const { appId } = (await redeem.json()) as { appId: string }
     await app.request(
@@ -514,7 +587,7 @@ describe("TTL guarantees (Fix A/B)", () => {
         headers: { Authorization: `Bearer ${owner}`, "Content-Type": "application/json" },
         body: JSON.stringify({ appId }),
       },
-      env(kv),
+      env(kv, db),
     )
 
     const appPuts = kv._puts.filter((p) => p.key.startsWith(PAIR_APP_PREFIX))

@@ -25,10 +25,10 @@ import {
   PAIR_APP_PREFIX,
   PAIR_APP_TTL_SEC,
   PAIR_BOOTSTRAP_DONE_KEY,
-  PAIR_CLAIM_PREFIX,
   PAIR_CLAIM_TTL_SEC,
 } from "../constants.js"
 import {
+  ensurePairClaimTable,
   mintPendingClaim,
   normalizeClaimCode,
   nowSec,
@@ -51,7 +51,7 @@ const revokeSchema = z.object({
  * Mint a single-use claim code. Owner-only (not app-allowlisted).
  */
 pairRoutes.post("/issue", async (c) => {
-  const { code, createdAt } = await mintPendingClaim(c.env.CONFIG)
+  const { code, createdAt } = await mintPendingClaim(c.env.DB)
   return c.json({
     success: true,
     claimCode: code,
@@ -63,19 +63,54 @@ pairRoutes.post("/issue", async (c) => {
 /**
  * POST /api/pair/redeem (public — claim code is the auth)
  *
- * Validate the claim, mark it used (TTL re-applied so it does not become a
- * permanent KV entry), sign an app JWT, and write the pairing/revocation record
- * with its D2 TTL-on-entry.
+ * Atomically flip the claim pending -> used with one conditional D1 UPDATE
+ * (issue #24: KV has no compare-and-swap, so a get-check-put sequence let two
+ * concurrent redeems of one code both mint a 1y app JWT; `meta.changes === 1`
+ * is the single-use gate — the loser of the flip gets 409). Expiry is the
+ * `created_at` cutoff baked into the WHERE clause (D1 has no TTL-on-entry;
+ * expired rows are pruned lazily on mint). On success, sign an app JWT and
+ * write the pairing/revocation record in KV with its D2 TTL-on-entry.
  */
 pairRoutes.post("/redeem", zValidator("json", redeemSchema), async (c) => {
   const { claimCode: rawCode } = c.req.valid("json")
   const code = normalizeClaimCode(rawCode)
-  const claimKey = PAIR_CLAIM_PREFIX + code
+  await ensurePairClaimTable(c.env.DB)
 
-  const claim = (await c.env.CONFIG.get(claimKey, "json")) as
-    | { status?: string }
-    | null
-  if (!claim) {
+  // Server-generated appId: the caller must NOT name the revocation-record key.
+  // This is a public endpoint — a client-chosen appId could collide with an
+  // existing paired device and overwrite it (e.g. silently un-revoke). The id is
+  // returned so the app / a future owner list endpoint can reference it.
+  // Generated up-front: the flip statement needs it, and the loser's id is
+  // simply discarded.
+  const appId = crypto.randomUUID()
+  const now = nowSec()
+
+  // The single-use gate: D1 serializes this one statement, so exactly one
+  // concurrent redeemer can match `status = 'pending'`.
+  const flipped = await c.env.DB.prepare(
+    `UPDATE pair_claim SET status = ?1, app_id = ?2, redeemed_at = ?3
+      WHERE code = ?4 AND status = 'pending' AND created_at > ?5`,
+  )
+    .bind("used", appId, now, code, now - PAIR_CLAIM_TTL_SEC)
+    .run()
+
+  if (flipped.meta.changes !== 1) {
+    // Disambiguate the loss: used vs not-found/expired.
+    const row = await c.env.DB.prepare(
+      "SELECT status FROM pair_claim WHERE code = ?1",
+    )
+      .bind(code)
+      .first<{ status: string } | null>()
+    if (row?.status === "used") {
+      return c.json(
+        {
+          success: false,
+          error: "Claim code already used",
+          errorCode: "CLAIM_ALREADY_USED",
+        },
+        409,
+      )
+    }
     return c.json(
       {
         success: false,
@@ -85,30 +120,13 @@ pairRoutes.post("/redeem", zValidator("json", redeemSchema), async (c) => {
       404,
     )
   }
-  if (claim.status !== "pending") {
-    return c.json(
-      {
-        success: false,
-        error: "Claim code already used",
-        errorCode: "CLAIM_ALREADY_USED",
-      },
-      409,
-    )
-  }
 
-  // Server-generated appId: the caller must NOT name the revocation-record key.
-  // This is a public endpoint — a client-chosen appId could collide with an
-  // existing paired device and overwrite it (e.g. silently un-revoke). The id is
-  // returned so the app / a future owner list endpoint can reference it.
-  const appId = crypto.randomUUID()
-
-  // Mark used — MUST re-pass expirationTtl: a KV put without it makes the key
-  // permanent, leaking every claim ever issued (kept short per the single-use design).
-  await c.env.CONFIG.put(
-    claimKey,
-    JSON.stringify({ status: "used", appId }),
-    { expirationTtl: PAIR_CLAIM_TTL_SEC },
-  )
+  // Burned-claim note: a crash between this flip and the response burns the
+  // code without delivering the token (same window the KV flow had — the
+  // flip always preceded the response). Recovery is user-side and simple:
+  // mint a new code (/api/pair/issue, or refresh the still-open bootstrap
+  // page). Deliberately NO retry path that treats a used row as redeemable
+  // again — that would reopen the exact race the atomic flip closes.
 
   const pairingToken = await signAppToken(c.env, appId)
   await c.env.CONFIG.put(
@@ -122,7 +140,8 @@ pairRoutes.post("/redeem", zValidator("json", redeemSchema), async (c) => {
   // the return so the surface only closes on a fully successful redeem.
   // Unconditional and permanent (no TTL — a deployment-lifetime flag, unlike
   // the claims above). Accepted: KV eventual consistency can leave GET /
-  // rendering for ~60s (same class as the no-CAS redeem race, ADR-009 D2).
+  // rendering for ~60s (ADR-009 Decision C residual — the redeem race itself
+  // is closed by the atomic D1 flip above).
   await c.env.CONFIG.put(
     PAIR_BOOTSTRAP_DONE_KEY,
     JSON.stringify({ appId, completedAt: nowSec() }),
