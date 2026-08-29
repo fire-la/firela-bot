@@ -50,12 +50,13 @@ export interface RelayApiResponse<T> {
 
 /**
  * Webhook callback registration (piggybacked on health check)
+ *
+ * The routing key is derived server-side from the authenticated API
+ * token (userId-tokenId); no account_id is sent or accepted.
  */
 export interface WebhookCallbackRegistration {
   /** BillClaw instance callback URL for webhook forwarding */
   callback_url: string
-  /** Account ID for routing webhooks to the correct instance */
-  account_id: string
 }
 
 /**
@@ -67,7 +68,6 @@ export interface WebhookCallbackRegistration {
  */
 export interface RelayHealthCheckRequestBody {
   callback_url?: string
-  account_id?: string
 }
 
 /**

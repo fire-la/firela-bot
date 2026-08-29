@@ -64,14 +64,12 @@ _describe("Webhook Forwarding (Integration)", () => {
       "should register callback URL via POST /health with body",
       async () => {
         const callbackUrl = `https://test.example.com/webhook/plaid`
-        const accountId = `test-account-${Date.now()}`
 
         try {
-          const result = await relayClient.request<RelayHealthCheckResponse>("/api/health", {
+          const result = await relayClient.request<RelayHealthCheckResponse>("/api/open-banking/health", {
             method: "POST",
             body: JSON.stringify({
               callback_url: callbackUrl,
-              account_id: accountId,
             }),
           })
 
@@ -79,8 +77,7 @@ _describe("Webhook Forwarding (Integration)", () => {
           expect(result.status).toBe("ok")
           expect(result.webhook_registered).toBe(true)
         } catch (error) {
-          // POST /health endpoint may not be deployed on this staging environment.
-          // Verify the error is a parseable relay error (non-JSON or 404 response).
+          // Registration endpoint may not be deployed on this staging environment.
           expect(error).toBeDefined()
         }
       },
@@ -114,22 +111,20 @@ _describe("Webhook Forwarding (Integration)", () => {
       "should handle duplicate callback registration",
       async () => {
         const callbackUrl = `https://test.example.com/webhook/duplicate`
-        const accountId = `test-dup-${Date.now()}`
         const body = JSON.stringify({
           callback_url: callbackUrl,
-          account_id: accountId,
         })
 
         try {
           // First registration
-          const result1 = await relayClient.request<RelayHealthCheckResponse>("/api/health", {
+          const result1 = await relayClient.request<RelayHealthCheckResponse>("/api/open-banking/health", {
             method: "POST",
             body,
           })
           expect(result1.status).toBe("ok")
 
           // Second registration with same URL
-          const result2 = await relayClient.request<RelayHealthCheckResponse>("/api/health", {
+          const result2 = await relayClient.request<RelayHealthCheckResponse>("/api/open-banking/health", {
             method: "POST",
             body,
           })
@@ -151,11 +146,10 @@ _describe("Webhook Forwarding (Integration)", () => {
         )
 
         try {
-          const result = await badClient.request<RelayHealthCheckResponse>("/api/health", {
+          const result = await badClient.request<RelayHealthCheckResponse>("/api/open-banking/health", {
             method: "POST",
             body: JSON.stringify({
               callback_url: "https://test.example.com/webhook",
-              account_id: "test-account",
             }),
           })
 
@@ -255,11 +249,9 @@ _describe("Webhook Forwarding (Integration)", () => {
     it("should verify WebhookCallbackRegistration type structure", () => {
       const registration: WebhookCallbackRegistration = {
         callback_url: "https://example.com/webhook/plaid",
-        account_id: "test-account-123",
       }
 
       expect(registration.callback_url).toBe("https://example.com/webhook/plaid")
-      expect(registration.account_id).toBe("test-account-123")
     })
   })
 
@@ -281,11 +273,10 @@ _describe("Webhook Forwarding (Integration)", () => {
         )
 
         try {
-          await relayClient.request<RelayHealthCheckResponse>("/api/health", {
+          await relayClient.request<RelayHealthCheckResponse>("/api/open-banking/health", {
             method: "POST",
             body: JSON.stringify({
               callback_url: "https://test.example.com/webhook",
-              account_id: "test-sec",
             }),
           })
         } catch {
@@ -320,11 +311,10 @@ _describe("Webhook Forwarding (Integration)", () => {
 
         try {
           const callbackUrl = "https://test.example.com/webhook/secure"
-          await relayClient.request<RelayHealthCheckResponse>("/api/health", {
+          await relayClient.request<RelayHealthCheckResponse>("/api/open-banking/health", {
             method: "POST",
             body: JSON.stringify({
               callback_url: callbackUrl,
-              account_id: "test-callback-sec",
             }),
           })
         } catch {

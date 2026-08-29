@@ -82,7 +82,7 @@ _describe("Relay Health + Mode Selection", () => {
     async () => {
       try {
         const response = await relayClient.request<RelayHealthCheckResponse>(
-          "/api/health",
+          "/api/open-banking/health",
           {
             method: "POST",
             body: JSON.stringify({}),
@@ -108,22 +108,20 @@ _describe("Relay Health + Mode Selection", () => {
   it(
     "should register callback during health check",
     async () => {
-      const timestamp = Date.now()
       try {
         const response = await relayClient.request<RelayHealthCheckResponse>(
-          "/api/health",
+          "/api/open-banking/health",
           {
             method: "POST",
             body: JSON.stringify({
               callback_url: "https://test.example.com/webhook/plaid",
-              account_id: `cross-cut-test-${timestamp}`,
             }),
           },
         )
 
         expect(response).toBeDefined()
       } catch {
-        // POST /health may not return JSON on all deployments
+        // Registration endpoint may not be deployed on all environments
         const health = await relayClient.healthCheck(10000)
         expect(health.available).toBe(true)
       }
