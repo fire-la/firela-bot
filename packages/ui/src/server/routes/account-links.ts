@@ -21,10 +21,23 @@ import { VltClient, type VltRegion } from "@firela/billclaw-core"
 import type { PlaidAccount } from "@firela/billclaw-core/relay"
 
 import type { Env } from "../index.js"
+import { isPlaidItemDue, type PlaidItem } from "../lib/plaid-item.js"
 import { getPlaidRelayClient } from "../lib/plaid-relay.js"
 import { getVltJwt } from "../lib/vlt-auth.js"
 
 export const accountLinksRoutes = new Hono<{ Bindings: Env }>()
+
+// 500 up front when the CONFIG binding is absent (matches existing routes);
+// one middleware instead of five per-handler copies.
+accountLinksRoutes.use("*", async (c, next) => {
+  if (!c.env.CONFIG) {
+    return c.json(
+      { success: false, error: "KV storage not configured", errorCode: "KV_NOT_CONFIGURED" },
+      500,
+    )
+  }
+  await next()
+})
 
 // KV keys (same as sync-job.ts)
 const CONFIG_KEY = "billclaw:config"
@@ -37,16 +50,6 @@ interface StoredVltConfig {
   apiUrl: string
   accessToken?: string
   region?: VltRegion
-}
-
-interface StoredAccount {
-  id: string
-  name?: string
-  provider?: string
-  type?: string
-  plaidAccessToken?: string
-  enabled?: boolean
-  status?: string
 }
 
 /** One discovered external account row (display shape for the mapping UI). */
@@ -65,7 +68,7 @@ export interface DiscoveredAccount {
   availableBalance?: number
 }
 
-interface ItemDiscoveryError {
+export interface ItemDiscoveryError {
   itemId: string
   itemName?: string
   error: string
@@ -111,7 +114,7 @@ async function getVltClient(env: Env): Promise<VltClient | null> {
  * `name` is typed required by the relay schema but not runtime-validated —
  * coerce with the mask fallback.
  */
-function toDiscovered(item: StoredAccount, a: PlaidAccount): DiscoveredAccount {
+function toDiscovered(item: PlaidItem, a: PlaidAccount): DiscoveredAccount {
   return {
     provider: "plaid",
     externalAccountId: a.account_id,
@@ -134,24 +137,12 @@ function toDiscovered(item: StoredAccount, a: PlaidAccount): DiscoveredAccount {
  * proxy. Per-item failures are reported in `errors`, not fatal.
  */
 accountLinksRoutes.get("/discover", async (c) => {
-  if (!c.env.CONFIG) {
-    return c.json(
-      { success: false, error: "KV storage not configured", errorCode: "KV_NOT_CONFIGURED" },
-      500,
-    )
-  }
   try {
     const accounts =
-      (await c.env.CONFIG.get<StoredAccount[]>(ACCOUNTS_KEY, "json")) ?? []
-    // Same due-filter as the sync job (sync-job.ts): only items the sync will
-    // actually feed are mappable — otherwise links would be dead on arrival.
-    const due = accounts.filter(
-      (a) =>
-        (a.provider === "plaid" || a.type === "plaid") &&
-        !!a.plaidAccessToken &&
-        a.enabled !== false &&
-        a.status === "connected",
-    )
+      (await c.env.CONFIG.get<PlaidItem[]>(ACCOUNTS_KEY, "json")) ?? []
+    // Same due-filter as the sync job (lib/plaid-item.ts): only items the
+    // sync will actually feed are mappable — otherwise links would be dead.
+    const due = accounts.filter(isPlaidItemDue)
 
     // Short-circuit before touching the relay: on a fresh deployment (no
     // Plaid accounts, possibly no relay key) the empty state must render.
@@ -208,12 +199,6 @@ accountLinksRoutes.get("/discover", async (c) => {
  * List the user's BeanAccounts from vlt (mapping targets).
  */
 accountLinksRoutes.get("/bean-accounts", async (c) => {
-  if (!c.env.CONFIG) {
-    return c.json(
-      { success: false, error: "KV storage not configured", errorCode: "KV_NOT_CONFIGURED" },
-      500,
-    )
-  }
   try {
     const client = await getVltClient(c.env)
     if (!client) {
@@ -243,12 +228,6 @@ accountLinksRoutes.get("/bean-accounts", async (c) => {
  * List the user's active external account links from vlt.
  */
 accountLinksRoutes.get("/", async (c) => {
-  if (!c.env.CONFIG) {
-    return c.json(
-      { success: false, error: "KV storage not configured", errorCode: "KV_NOT_CONFIGURED" },
-      500,
-    )
-  }
   try {
     const client = await getVltClient(c.env)
     if (!client) {
@@ -282,12 +261,6 @@ accountLinksRoutes.post(
   "/",
   zValidator("json", createLinkSchema),
   async (c) => {
-    if (!c.env.CONFIG) {
-      return c.json(
-        { success: false, error: "KV storage not configured", errorCode: "KV_NOT_CONFIGURED" },
-        500,
-      )
-    }
     try {
       const client = await getVltClient(c.env)
       if (!client) {
@@ -327,12 +300,6 @@ accountLinksRoutes.delete(
   "/:id",
   zValidator("param", idParamSchema),
   async (c) => {
-    if (!c.env.CONFIG) {
-      return c.json(
-        { success: false, error: "KV storage not configured", errorCode: "KV_NOT_CONFIGURED" },
-        500,
-      )
-    }
     try {
       const client = await getVltClient(c.env)
       if (!client) {

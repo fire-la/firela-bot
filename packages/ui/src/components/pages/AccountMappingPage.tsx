@@ -8,6 +8,7 @@
  * per-transaction account_id via the link table).
  */
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 import { toast, Toaster } from "sonner"
 import {
   ArrowLeftRight,
@@ -270,9 +271,9 @@ export function AccountMappingPage() {
           <AlertDescription>
             Firela VLT is not configured. Mappings are stored in VLT — set it up
             on the{" "}
-            <a className="underline" href="/vlt">
+            <Link className="underline" to="/vlt">
               VLT Integration
-            </a>{" "}
+            </Link>{" "}
             page first.
           </AlertDescription>
         </Alert>
@@ -331,9 +332,9 @@ export function AccountMappingPage() {
           <AlertCircle className="size-4" />
           <AlertDescription>
             No bank accounts discovered. Connect a Plaid bank on the{" "}
-            <a className="underline" href="/connect">
+            <Link className="underline" to="/connect">
               Connect
-            </a>{" "}
+            </Link>{" "}
             page first.
           </AlertDescription>
         </Alert>

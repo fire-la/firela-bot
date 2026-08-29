@@ -9,31 +9,17 @@
 import type { ExternalAccountLinkResponseDto } from "@firela/api-types"
 
 import { apiFetch } from "@/lib/auth"
+// Type-only import from the server route (erased at build) — the discovery
+// payload shape has a single source instead of a drifting client copy.
+import type {
+  DiscoveredAccount,
+  ItemDiscoveryError,
+} from "@/server/routes/account-links"
+
+export type { DiscoveredAccount, ItemDiscoveryError }
 
 /** vlt link row (authoritative type from @firela/api-types). */
 export type LinkView = ExternalAccountLinkResponseDto
-
-/** One discovered external account row (GET /api/account-links/discover). */
-export interface DiscoveredAccount {
-  provider: "plaid"
-  externalAccountId: string
-  /** billclaw-side provenance (which connected Plaid item this came from). */
-  itemId: string
-  itemName: string
-  name: string
-  mask?: string
-  type: string
-  subtype?: string
-  currency?: string
-  currentBalance?: number
-  availableBalance?: number
-}
-
-export interface ItemDiscoveryError {
-  itemId: string
-  itemName?: string
-  error: string
-}
 
 /** A vlt BeanAccount (mapping target). */
 export interface BeanAccountView {

@@ -20,6 +20,7 @@ import {
 } from "@firela/billclaw-core"
 
 import type { Env } from "../index.js"
+import { isPlaidItemDue } from "../lib/plaid-item.js"
 import { getPlaidRelayClient } from "../lib/plaid-relay.js"
 import { getVltJwt } from "../lib/vlt-auth.js"
 import { toPlaidUpload, type RawPlaidTransaction } from "./plaid-upload-converter.js"
@@ -103,13 +104,7 @@ export async function runSyncJob(env: Env): Promise<void> {
   }
 
   const accounts = (await env.CONFIG.get<SyncAccount[]>(ACCOUNTS_KEY, "json")) ?? []
-  const due = accounts.filter(
-    (a) =>
-      (a.provider === "plaid" || a.type === "plaid") &&
-      !!a.plaidAccessToken &&
-      a.enabled !== false &&
-      a.status === "connected",
-  )
+  const due = accounts.filter(isPlaidItemDue)
   if (due.length === 0) {
     console.log("[sync-job] No enabled Plaid accounts to sync")
     return
