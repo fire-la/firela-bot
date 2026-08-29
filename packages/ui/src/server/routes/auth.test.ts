@@ -161,6 +161,7 @@ describe("POST /auth/setup anonymous-oracle throttle", () => {
     const body = (await locked.json()) as { errorCode: string; retryAfter: number }
     expect(body.errorCode).toBe("SETUP_THROTTLED")
     expect(body.retryAfter).toBeGreaterThan(0)
+    expect(locked.headers.get("Retry-After")).toBeTruthy()
   })
 
   it("a successful login clears the failure counter", async () => {

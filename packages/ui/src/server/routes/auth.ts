@@ -81,6 +81,7 @@ authRoutes.post("/setup", zValidator("json", setupRequestSchema), async (c) => {
         retryAfter: lockRemaining,
       },
       429,
+      { "Retry-After": String(lockRemaining) },
     )
   }
 

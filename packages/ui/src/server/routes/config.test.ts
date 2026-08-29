@@ -9,6 +9,8 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { Hono } from "hono"
 
 import { configRoutes } from "./config.js"
+import { SETUP_PASSWORD_KEY } from "../constants.js"
+import { makeD1 } from "../../test/fake-d1.js"
 
 // Fake CONFIG KV namespace capturing the last written blob.
 let lastPut: string | null = null
@@ -166,5 +168,63 @@ describe("PUT /api/config (deep-merge)", () => {
       { CONFIG: undefined } as never,
     )
     expect(res.status).toBe(400)
+  })
+})
+
+describe("PUT /settings/password", () => {
+  // Local fakes: the shared module env above has no DB, and the throttle
+  // needs the raw string KV (the json-parsing CONFIG there would mangle it).
+  function makeEnv() {
+    const store = new Map<string, string>([[SETUP_PASSWORD_KEY, "stored"]])
+    return {
+      CONFIG: {
+        get: async (key: string) => store.get(key) ?? null,
+        put: async (key: string, value: string) => store.set(key, value),
+      },
+      _raw: (key: string) => store.get(key) ?? null,
+    }
+  }
+
+  function putPassword(
+    env: ReturnType<typeof makeEnv>,
+    db: ReturnType<typeof makeD1>,
+    currentPassword: string,
+    newPassword = "new-pass",
+  ) {
+    return configRoutes.request(
+      "/settings/password",
+      {
+        method: "PUT",
+        body: JSON.stringify({ currentPassword, newPassword }),
+        headers: { "content-type": "application/json", "CF-Connecting-IP": "192.0.2.10" },
+      },
+      { CONFIG: env.CONFIG, DB: db } as never,
+    )
+  }
+
+  it("changes the password on a correct current password", async () => {
+    const env = makeEnv()
+    const res = await putPassword(env, makeD1(), "stored")
+    expect(res.status).toBe(200)
+    expect(env._raw(SETUP_PASSWORD_KEY)).toBe("new-pass")
+  })
+
+  it("rejects a wrong current password with 401 and leaves it unchanged", async () => {
+    const env = makeEnv()
+    const res = await putPassword(env, makeD1(), "nope")
+    expect(res.status).toBe(401)
+    expect(env._raw(SETUP_PASSWORD_KEY)).toBe("stored")
+  })
+
+  it("locks after 5 wrong attempts with 429 + Retry-After (OCR: no throttle here would let a stolen owner JWT brute-force)", async () => {
+    const env = makeEnv()
+    const db = makeD1()
+    for (let i = 0; i < 5; i++) {
+      expect((await putPassword(env, db, "nope")).status).toBe(401)
+    }
+    const locked = await putPassword(env, db, "stored") // even the right one
+    expect(locked.status).toBe(429)
+    expect(locked.headers.get("Retry-After")).toBeTruthy()
+    expect(env._raw(SETUP_PASSWORD_KEY)).toBe("stored")
   })
 })

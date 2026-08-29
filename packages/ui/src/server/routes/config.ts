@@ -16,6 +16,11 @@ import type { Env } from "../index.js"
 import { serverCache, CacheKeys } from "../lib/server-cache.js"
 import { RELAY_API_KEY_KEY, SETUP_PASSWORD_KEY, CF_API_TOKEN_KEY } from "../constants.js"
 import { timingSafeEqualStr } from "../lib/auth-helpers.js"
+import {
+  clearProofFailures,
+  proofLockRemaining,
+  recordProofFailure,
+} from "../lib/pair-helpers.js"
 import { getRelayApiKey } from "../lib/relay-helpers.js"
 import { getCloudflareApiToken } from "../lib/cloudflare-helpers.js"
 import { isApp } from "../middleware/auth.js"
@@ -627,8 +632,28 @@ configRoutes.put(
     try {
       const { currentPassword, newPassword } = c.req.valid("json")
 
+      // Same-secret throttle ceiling (OCR review): /auth/setup and the app
+      // proof path rate-limit wrong passwords; without one here, a holder of
+      // a stolen owner JWT could brute-force currentPassword at full speed
+      // to take over the password (and the app-proof capability it grants).
+      // Keyed by client IP like the /auth/setup oracle.
+      const throttleKey = `pwchange:${c.req.header("CF-Connecting-IP") ?? "unknown"}`
+      const lockRemaining = await proofLockRemaining(c.env.DB, throttleKey)
+      if (lockRemaining > 0) {
+        return c.json(
+          {
+            success: false,
+            error: "Too many failed password attempts; try again later",
+            retryAfter: lockRemaining,
+          },
+          429,
+          { "Retry-After": String(lockRemaining) },
+        )
+      }
+
       const storedPassword = await c.env.CONFIG.get(SETUP_PASSWORD_KEY) as string | null
       if (!storedPassword || !(await timingSafeEqualStr(currentPassword, storedPassword))) {
+        await recordProofFailure(c.env.DB, throttleKey)
         return c.json(
           { success: false, error: "Current password is incorrect" },
           401,
@@ -636,6 +661,7 @@ configRoutes.put(
       }
 
       await c.env.CONFIG.put(SETUP_PASSWORD_KEY, newPassword)
+      await clearProofFailures(c.env.DB, throttleKey)
       return c.json({ success: true })
     } catch (error) {
       return c.json(
