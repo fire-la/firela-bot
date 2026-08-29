@@ -14,7 +14,7 @@ import { z } from "zod"
 import { zValidator } from "@hono/zod-validator"
 import type { Env } from "../index.js"
 import { serverCache, CacheKeys } from "../lib/server-cache.js"
-import { RELAY_API_KEY_KEY, SETUP_PASSWORD_KEY, CF_API_TOKEN_KEY } from "../constants.js"
+import { MIN_PASSWORD_LENGTH, RELAY_API_KEY_KEY, SETUP_PASSWORD_KEY, CF_API_TOKEN_KEY } from "../constants.js"
 import { timingSafeEqualStr } from "../lib/auth-helpers.js"
 import {
   clearProofFailures,
@@ -616,8 +616,12 @@ configRoutes.put(
 // ============================================================================
 
 const changePasswordSchema = z.object({
+  // currentPassword VERIFIES an existing credential — ungated so legacy
+  // short passwords can still rotate up. newPassword CREATES one (issue #32).
   currentPassword: z.string().min(1, "Current password is required"),
-  newPassword: z.string().min(1, "New password is required"),
+  newPassword: z
+    .string()
+    .min(MIN_PASSWORD_LENGTH, `New password must be at least ${MIN_PASSWORD_LENGTH} characters`),
 })
 
 /**

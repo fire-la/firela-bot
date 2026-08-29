@@ -14,6 +14,7 @@ import { z } from "zod"
 import { zValidator } from "@hono/zod-validator"
 import type { Env } from "../index.js"
 import {
+  MIN_PASSWORD_LENGTH,
   PAIR_BOOTSTRAP_DONE_KEY,
   SETUP_PASSWORD_KEY,
 } from "../constants.js"
@@ -113,7 +114,20 @@ authRoutes.post("/setup", zValidator("json", setupRequestSchema), async (c) => {
         403,
       )
     }
-    // First call: accept any password and store it for future verification
+    // First call: store the password for future verification. The min-length
+    // gate applies to credential CREATION only — this endpoint doubles as SPA
+    // login, so the verify half below stays ungated and deployments with
+    // legacy short passwords keep working (issue #32 residue).
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return c.json(
+        {
+          success: false,
+          error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+          errorCode: "SETUP_PASSWORD_TOO_SHORT",
+        },
+        400,
+      )
+    }
     await env.CONFIG.put(SETUP_PASSWORD_KEY, password)
   } else if (!(await timingSafeEqualStr(password, storedPassword))) {
     await recordProofFailure(env.DB, throttleKey)

@@ -19,6 +19,14 @@ export const AUTH_SECRET_KEY = "firela:auth:jwt_secret"
 /** KV key for setup password (set on first /auth/setup call) */
 export const SETUP_PASSWORD_KEY = "firela:auth:setup_password"
 
+/**
+ * Minimum length for a newly created owner password (issue #32 residue).
+ * Gates credential CREATION only (first /auth/setup store, establish-owner,
+ * password change) — verification paths stay ungated so deployments with
+ * legacy short passwords keep working.
+ */
+export const MIN_PASSWORD_LENGTH = 8
+
 /** KV key for relay API key (configured via UI settings) */
 export const RELAY_API_KEY_KEY = "firela:relay:api_key"
 

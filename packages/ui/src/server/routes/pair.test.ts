@@ -1036,7 +1036,7 @@ describe("POST /api/pair/establish-owner (app only, ownerless start — #26)", (
     const appToken = await makeToken(kv, "app", "app-1")
 
     const res = await post(app, "/api/pair/establish-owner", kv, makeD1(), appToken, {
-      password: "another",
+      password: "another-password",
     })
     expect(res.status).toBe(409)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
@@ -1045,13 +1045,25 @@ describe("POST /api/pair/establish-owner (app only, ownerless start — #26)", (
     expect(kv._raw(SETUP_PASSWORD_KEY)).toBe("hunter2") // not overwritten
   })
 
+  it("400 on a short password — creation gate (issue #32)", async () => {
+    const kv = pairedKv(false)
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/establish-owner", kv, makeD1(), appToken, {
+      password: "short",
+    })
+    expect(res.status).toBe(400)
+    expect(kv._raw(SETUP_PASSWORD_KEY)).toBeNull() // nothing written
+  })
+
   it("403 for a non-app caller (owner)", async () => {
     const kv = pairedKv(false)
     const app = pairApp()
     const owner = await makeToken(kv, "owner", "owner")
 
     const res = await post(app, "/api/pair/establish-owner", kv, makeD1(), owner, {
-      password: "x",
+      password: "long-enough",
     })
     expect(res.status).toBe(403)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
@@ -1065,7 +1077,7 @@ describe("POST /api/pair/establish-owner (app only, ownerless start — #26)", (
     const appToken = await makeToken(kv, "app", "app-1")
 
     const res = await post(app, "/api/pair/establish-owner", kv, makeD1(), appToken, {
-      password: "x",
+      password: "long-enough",
     })
     expect(res.status).toBe(401)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
@@ -1083,7 +1095,7 @@ describe("POST /api/pair/establish-owner (app only, ownerless start — #26)", (
     const appToken = await makeToken(kv, "app", "app-1")
 
     const res = await post(app, "/api/pair/establish-owner", kv, db, appToken, {
-      password: "x",
+      password: "long-enough",
     })
     expect(res.status).toBe(429)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe(

@@ -102,6 +102,23 @@ describe("POST /auth/setup", () => {
     expect(kv._raw(SETUP_PASSWORD_KEY)).toBe("first-password")
   })
 
+  it("creation gate: first call with a short password is 400, nothing stored (issue #32)", async () => {
+    const kv = makeKv()
+    const res = await setup(kv, makeD1(), "short")
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "SETUP_PASSWORD_TOO_SHORT",
+    )
+    expect(kv._raw(SETUP_PASSWORD_KEY)).toBeNull()
+  })
+
+  it("legacy short stored password still logs in — verify path ungated (issue #32)", async () => {
+    const kv = makeKv({ [SETUP_PASSWORD_KEY]: "legacy" })
+    const res = await setup(kv, makeD1(), "legacy")
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { token: string }).token).toBeTruthy()
+  })
+
   it("ownerless closure: 403 SETUP_CLOSED when bootstrap is done and a live app exists", async () => {
     const kv = makeKv({
       [PAIR_BOOTSTRAP_DONE_KEY]: DONE,

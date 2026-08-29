@@ -32,6 +32,7 @@ import {
   PAIR_APP_PREFIX,
   PAIR_APP_TTL_SEC,
   PAIR_BOOTSTRAP_DONE_KEY,
+  MIN_PASSWORD_LENGTH,
   PAIR_CLAIM_TTL_SEC,
   SETUP_PASSWORD_KEY,
 } from "../constants.js"
@@ -65,7 +66,11 @@ const revokeSchema = z.object({
 })
 
 const establishOwnerSchema = z.object({
-  password: z.string().min(1, "Password is required"),
+  // Creation-only path (409s once a password exists), so the min-length
+  // gate is safe here — unlike /auth/setup this never verifies (issue #32).
+  password: z
+    .string()
+    .min(MIN_PASSWORD_LENGTH, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`),
 })
 
 /** Map a failed owner-password proof onto its JSON error response. */
