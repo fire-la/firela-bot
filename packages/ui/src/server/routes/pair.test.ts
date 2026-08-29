@@ -403,20 +403,23 @@ describe("GET /api/pair/config (public, issue #23)", () => {
     })
   })
 
-  it("half-configured (secret only) -> disabled: both keys are required", async () => {
-    // Pins the both-required semantics: enabled-with-no-sitekey would tell the
-    // app to render a widget it cannot render — a redeem lockout.
-    const res = await pairApp().request(
-      "/api/pair/config",
-      {},
-      env(makeKv(), makeD1(), { TURNSTILE_SECRET_KEY: "sec-1" }),
-    )
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({
-      success: true,
-      turnstileEnabled: false,
-      sitekey: null,
-    })
+  it("half-configured (either key alone) -> disabled with no sitekey: both are required", async () => {
+    // Pins the both-required semantics AND the payload invariant (sitekey
+    // non-null ⟺ enabled): a lone sitekey must not invite the app to render
+    // a widget whose tokens /redeem would reject.
+    const halves: Record<string, string>[] = [
+      { TURNSTILE_SECRET_KEY: "sec-1" },
+      { TURNSTILE_SITE_KEY: "site-key-1" },
+    ]
+    for (const extra of halves) {
+      const res = await pairApp().request("/api/pair/config", {}, env(makeKv(), makeD1(), extra))
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({
+        success: true,
+        turnstileEnabled: false,
+        sitekey: null,
+      })
+    }
   })
 })
 

@@ -221,7 +221,10 @@ pairRoutes.get("/config", (c) => {
   return c.json({
     success: true,
     turnstileEnabled: enabled,
-    sitekey: c.env.TURNSTILE_SITE_KEY ?? null,
+    // Gated on `enabled`: sitekey non-null ⟺ enforcement on. A bare sitekey
+    // with no secret must not invite the client to render a widget whose
+    // tokens /redeem would then reject.
+    sitekey: enabled ? c.env.TURNSTILE_SITE_KEY : null,
   })
 })
 
