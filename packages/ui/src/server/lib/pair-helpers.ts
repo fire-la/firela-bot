@@ -277,7 +277,7 @@ export async function getOwnerProofFailure(
   }
   // Plaintext equality matches the /auth/setup + PUT /api/settings/password
   // precedent (ADR-009 Track C residual note); hashing the stored password is
-  // a cross-cutting follow-up across all three compare sites, not a
+  // the cross-cutting follow-up tracked in fire-la/firela-bot#29, not a
   // per-surface patch.
   if (password !== stored) {
     await recordProofFailure(env.DB, appId)
