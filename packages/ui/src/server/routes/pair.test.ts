@@ -28,6 +28,7 @@ import {
   PAIR_BOOTSTRAP_DONE_KEY,
   PAIR_CLAIM_TTL_SEC,
   PAIR_TOKEN_TTL_SEC,
+  SETUP_PASSWORD_KEY,
 } from "../constants.js"
 import type { Env } from "../index.js"
 
@@ -132,7 +133,9 @@ describe("POST /api/pair/issue (owner)", () => {
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe("AUTH_MISSING")
   })
 
-  it("403 APP_ROLE_PATH_DENIED with an app token (issue is owner-only)", async () => {
+  it("401 APP_NOT_PAIRED with an app token and no pairing record", async () => {
+    // /issue is now app-allowlisted (#26) — the middleware proceeds to the
+    // fail-closed revocation read and rejects the recordless token there.
     const kv = makeKv()
     const app = pairApp()
     const appToken = await makeToken(kv, "app", "app-1")
@@ -141,9 +144,9 @@ describe("POST /api/pair/issue (owner)", () => {
       { method: "POST", headers: { Authorization: `Bearer ${appToken}` } },
       env(kv, makeD1()),
     )
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(401)
     expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
-      "APP_ROLE_PATH_DENIED",
+      "APP_NOT_PAIRED",
     )
   })
 
@@ -795,5 +798,264 @@ describe("claim-code shape", () => {
     expect(normalizeClaimCode("oil")).toBe("011")
     expect(normalizeClaimCode("abcd")).toBe("ABCD")
     expect(normalizeClaimCode("0123")).toBe("0123") // digits pass through
+  })
+})
+
+// --- Track C (issue #26): app-side mint via owner-password proof --------------
+
+/** KV state of one live paired device (`app-1`) with the owner password set. */
+function pairedKv(withPassword = true) {
+  const initial: Record<string, unknown> = {
+    [PAIR_APP_PREFIX + "app-1"]: { appId: "app-1", pairedAt: 1, revoked: false },
+  }
+  if (withPassword) initial[SETUP_PASSWORD_KEY] = "hunter2"
+  return makeKv(initial)
+}
+
+/** POST a JSON body with the caller's Bearer token. */
+async function post(
+  app: ReturnType<typeof pairApp>,
+  path: string,
+  kv: ReturnType<typeof makeKv>,
+  db: ReturnType<typeof makeD1>,
+  token: string,
+  body?: unknown,
+): Promise<Response> {
+  return app.request(
+    path,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    },
+    env(kv, db),
+  )
+}
+
+describe("POST /api/pair/issue (app role, owner-password proof — #26)", () => {
+  it("mints with the correct password, stored with origin 'app'", async () => {
+    const kv = pairedKv()
+    const db = makeD1()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/issue", kv, db, appToken, {
+      password: "hunter2",
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      claimCode: string
+      expiresAt: number
+      workerUrl: string
+    }
+    expect(body.claimCode).toMatch(CLAIM_RE)
+    expect(db._row(body.claimCode)).toMatchObject({
+      status: "pending",
+      origin: "app",
+    })
+    expect(body.expiresAt).toBe(
+      db._row(body.claimCode)!.created_at + PAIR_CLAIM_TTL_SEC,
+    )
+  })
+
+  it("401 OWNER_PASSWORD_INVALID on a wrong password, no claim row minted", async () => {
+    const kv = pairedKv()
+    const db = makeD1()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/issue", kv, db, appToken, {
+      password: "wrong",
+    })
+    expect(res.status).toBe(401)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "OWNER_PASSWORD_INVALID",
+    )
+    expect(db._rows()).toHaveLength(0) // proof runs BEFORE the mint
+    expect(db._throttle("app-1")!.failures).toBe(1)
+  })
+
+  it("409 OWNER_PASSWORD_REQUIRED when no owner password exists (ownerless)", async () => {
+    const kv = pairedKv(false)
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/issue", kv, makeD1(), appToken, {
+      password: "whatever",
+    })
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "OWNER_PASSWORD_REQUIRED",
+    )
+  })
+
+  it("400 OWNER_PASSWORD_MISSING with no body or no password field", async () => {
+    const kv = pairedKv()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const noBody = await post(app, "/api/pair/issue", kv, makeD1(), appToken)
+    expect(noBody.status).toBe(400)
+    expect(((await noBody.json()) as { errorCode: string }).errorCode).toBe(
+      "OWNER_PASSWORD_MISSING",
+    )
+
+    const noField = await post(app, "/api/pair/issue", kv, makeD1(), appToken, {})
+    expect(noField.status).toBe(400)
+  })
+
+  it("owner empty-body path is unchanged (regression)", async () => {
+    const kv = pairedKv()
+    const db = makeD1()
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const body = await issue(app, kv, db, owner)
+    expect(db._row(body.claimCode)!.origin).toBeNull()
+  })
+
+  it("refuses even the correct password while throttled (429 PROOF_THROTTLED)", async () => {
+    const kv = pairedKv()
+    const db = makeD1(
+      {},
+      { "app-1": { failures: 9, locked_until: Math.floor(Date.now() / 1000) + 60 } },
+    )
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/issue", kv, db, appToken, {
+      password: "hunter2",
+    })
+    expect(res.status).toBe(429)
+    const body = (await res.json()) as { errorCode: string; retryAfter: number }
+    expect(body.errorCode).toBe("PROOF_THROTTLED")
+    expect(body.retryAfter).toBeGreaterThan(0)
+    expect(db._rows()).toHaveLength(0)
+    // Locked attempts must not grow the counter (decay is by time alone).
+    expect(db._throttle("app-1")!.failures).toBe(9)
+  })
+
+  it("arms the lock on the 5th wrong password and clears on success", async () => {
+    const kv = pairedKv()
+    const db = makeD1()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    for (let i = 0; i < 4; i++) {
+      const res = await post(app, "/api/pair/issue", kv, db, appToken, {
+        password: "wrong",
+      })
+      expect(res.status).toBe(401)
+      expect(db._throttle("app-1")!.locked_until).toBe(0) // free failures
+    }
+    const fifth = await post(app, "/api/pair/issue", kv, db, appToken, {
+      password: "wrong",
+    })
+    expect(fifth.status).toBe(401)
+    expect(db._throttle("app-1")!.failures).toBe(5)
+    expect(db._throttle("app-1")!.locked_until).toBeGreaterThan(
+      Math.floor(Date.now() / 1000) - 1,
+    )
+
+    // A fresh counter (lock expired scenario): a successful proof deletes it.
+    const db2 = makeD1({}, { "app-1": { failures: 2, locked_until: 0 } })
+    const ok = await post(app, "/api/pair/issue", kv, db2, appToken, {
+      password: "hunter2",
+    })
+    expect(ok.status).toBe(200)
+    expect(db2._throttle("app-1")).toBeUndefined()
+  })
+})
+
+describe("POST /api/pair/establish-owner (app only, ownerless start — #26)", () => {
+  it("creates the password and returns the first claim in one response, no token", async () => {
+    const kv = pairedKv(false)
+    const db = makeD1()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/establish-owner", kv, db, appToken, {
+      password: "new-password",
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown> & {
+      claimCode: string
+      expiresAt: number
+    }
+    expect(kv._raw(SETUP_PASSWORD_KEY)).toBe("new-password")
+    expect(body.claimCode).toMatch(CLAIM_RE)
+    expect(db._row(body.claimCode)).toMatchObject({
+      status: "pending",
+      origin: "app",
+    })
+    expect(body.expiresAt).toBe(
+      db._row(body.claimCode)!.created_at + PAIR_CLAIM_TTL_SEC,
+    )
+    expect(body.token).toBeUndefined() // never an owner credential to the app
+    expect(body.pairingToken).toBeUndefined()
+  })
+
+  it("409 OWNER_ALREADY_ESTABLISHED once a password exists", async () => {
+    const kv = pairedKv()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/establish-owner", kv, makeD1(), appToken, {
+      password: "another",
+    })
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "OWNER_ALREADY_ESTABLISHED",
+    )
+    expect(kv._raw(SETUP_PASSWORD_KEY)).toBe("hunter2") // not overwritten
+  })
+
+  it("403 for a non-app caller (owner)", async () => {
+    const kv = pairedKv(false)
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+
+    const res = await post(app, "/api/pair/establish-owner", kv, makeD1(), owner, {
+      password: "x",
+    })
+    expect(res.status).toBe(403)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "AUTH_INVALID_ROLE",
+    )
+  })
+
+  it("401 APP_NOT_PAIRED with an app token and no pairing record", async () => {
+    const kv = makeKv()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/establish-owner", kv, makeD1(), appToken, {
+      password: "x",
+    })
+    expect(res.status).toBe(401)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "APP_NOT_PAIRED",
+    )
+  })
+
+  it("429 while the shared proof lock is held", async () => {
+    const kv = pairedKv(false)
+    const db = makeD1(
+      {},
+      { "app-1": { failures: 7, locked_until: Math.floor(Date.now() / 1000) + 60 } },
+    )
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/establish-owner", kv, db, appToken, {
+      password: "x",
+    })
+    expect(res.status).toBe(429)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "PROOF_THROTTLED",
+    )
+    expect(kv._raw(SETUP_PASSWORD_KEY)).toBeNull() // nothing written
   })
 })

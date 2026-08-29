@@ -13,8 +13,12 @@ import { sign, verify } from "hono/jwt"
 import { z } from "zod"
 import { zValidator } from "@hono/zod-validator"
 import type { Env } from "../index.js"
-import { SETUP_PASSWORD_KEY } from "../constants.js"
+import {
+  PAIR_BOOTSTRAP_DONE_KEY,
+  SETUP_PASSWORD_KEY,
+} from "../constants.js"
 import { getAuthSecret, ensureAuthSecret } from "../lib/auth-helpers.js"
+import { hasLivePairedApp } from "../lib/pair-helpers.js"
 
 export const authRoutes = new Hono<{ Bindings: Env }>()
 
@@ -59,6 +63,28 @@ authRoutes.post("/setup", zValidator("json", setupRequestSchema), async (c) => {
   // Password check: KV stored > first-time auto-lock
   const storedPassword = await env.CONFIG.get(SETUP_PASSWORD_KEY) as string | null
   if (!storedPassword) {
+    // Ownerless closure (issue #26 bundled fix): first-caller setup is only
+    // legal while the deployment is fresh (no redeem yet) or fully abandoned
+    // (every pairing record expired/revoked — the deployment is dead and
+    // first-caller setup is the only recovery). Once an app has redeemed and a
+    // live pairing record exists, ownership is established from the paired app
+    // (POST /api/pair/establish-owner) — an anonymous URL holder must not be
+    // able to claim a running deployment at any time. Two single-key GETs
+    // short-circuit; the KV prefix walk runs only when both are set.
+    if (
+      (await env.CONFIG.get(PAIR_BOOTSTRAP_DONE_KEY)) &&
+      (await hasLivePairedApp(env.CONFIG))
+    ) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "Setup is closed on this deployment; set the owner password from a paired app (Settings > Add device)",
+          errorCode: "SETUP_CLOSED",
+        },
+        403,
+      )
+    }
     // First call: accept any password and store it for future verification
     await env.CONFIG.put(SETUP_PASSWORD_KEY, password)
   } else if (password !== storedPassword) {

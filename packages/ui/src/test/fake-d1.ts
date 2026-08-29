@@ -22,6 +22,12 @@ export type PairClaimRow = {
   redeemed_at: number | null
 }
 
+export type PairProofThrottleRow = {
+  app_id: string
+  failures: number
+  locked_until: number
+}
+
 type Bound = {
   bind: (...values: unknown[]) => Bound
   run: () => Promise<{ success: true; meta: { changes: number } }>
@@ -32,7 +38,10 @@ type Bound = {
  * Seed rows by code; partials default to a fresh pending claim
  * (status "pending", created_at now, NULL origin/app_id/redeemed_at).
  */
-export function makeD1(initial: Record<string, Partial<PairClaimRow>> = {}) {
+export function makeD1(
+  initial: Record<string, Partial<PairClaimRow>> = {},
+  throttle: Record<string, Partial<PairProofThrottleRow>> = {},
+) {
   const rows = new Map<string, PairClaimRow>()
   for (const [code, seed] of Object.entries(initial)) {
     rows.set(code, {
@@ -42,6 +51,16 @@ export function makeD1(initial: Record<string, Partial<PairClaimRow>> = {}) {
       created_at: seed.created_at ?? Math.floor(Date.now() / 1000),
       app_id: seed.app_id ?? null,
       redeemed_at: seed.redeemed_at ?? null,
+    })
+  }
+
+  // Owner-password proof throttle rows (issue #26), keyed by app_id.
+  const throttleRows = new Map<string, PairProofThrottleRow>()
+  for (const [appId, seed] of Object.entries(throttle)) {
+    throttleRows.set(appId, {
+      app_id: appId,
+      failures: seed.failures ?? 0,
+      locked_until: seed.locked_until ?? 0,
     })
   }
 
@@ -97,6 +116,28 @@ export function makeD1(initial: Record<string, Partial<PairClaimRow>> = {}) {
             }
             return Promise.resolve({ success: true, meta: { changes } })
           }
+          // INSERT INTO pair_proof_throttle ... ON CONFLICT(app_id) DO UPDATE
+          // SET failures = ?2, locked_until = ?3 — a straight upsert with
+          // JS-computed values (the read-then-upsert race is documented as
+          // tolerable in pair-helpers).
+          if (lc.includes("insert into pair_proof_throttle")) {
+            const [appId, failures, lockedUntil] = values as [
+              string, number, number,
+            ]
+            throttleRows.set(appId, {
+              app_id: appId,
+              failures,
+              locked_until: lockedUntil,
+            })
+            return Promise.resolve({ success: true, meta: { changes: 1 } })
+          }
+          if (lc.includes("delete from pair_proof_throttle")) {
+            const [appId] = values as [string]
+            return Promise.resolve({
+              success: true,
+              meta: { changes: throttleRows.delete(appId) ? 1 : 0 },
+            })
+          }
           throw new Error(`fake-d1: unexpected statement: ${s}`)
         },
         first: <T>() => {
@@ -105,6 +146,10 @@ export function makeD1(initial: Record<string, Partial<PairClaimRow>> = {}) {
             // row; each caller reads its own column subset.
             const [code] = values as [string]
             return Promise.resolve((rows.get(code) ?? null) as T | null)
+          }
+          if (lc.includes("from pair_proof_throttle where app_id")) {
+            const [appId] = values as [string]
+            return Promise.resolve((throttleRows.get(appId) ?? null) as T | null)
           }
           throw new Error(`fake-d1: unexpected statement: ${s}`)
         },
@@ -119,5 +164,7 @@ export function makeD1(initial: Record<string, Partial<PairClaimRow>> = {}) {
     _row: (code: string) => rows.get(code),
     /** Oracle: all rows as an array. */
     _rows: () => [...rows.values()],
+    /** Oracle: one throttle row by app_id (undefined if absent). */
+    _throttle: (appId: string) => throttleRows.get(appId),
   }
 }

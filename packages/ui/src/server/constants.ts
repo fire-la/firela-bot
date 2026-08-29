@@ -112,4 +112,12 @@ export const APP_ROLE_ALLOWLIST = [
   // mount outside the /api/config prefix) plus webhooks health (no such
   // route; /webhook/health is public HMAC territory).
   { method: "PUT", path: "/api/config" },
+  // App-side pairing surface (issue #26 / Track C): the no-SPA CF cohort mints
+  // claim codes from the paired app with the owner password as per-request
+  // proof — the app never receives an owner credential. establish-owner is the
+  // ownerless start (first add-device creates the password and returns the
+  // first claim in one response). Handler-level password proof + D1 throttle
+  // back the shared paths; the method+path allowlist entry alone mints nothing.
+  { method: "POST", path: "/api/pair/issue" },
+  { method: "POST", path: "/api/pair/establish-owner" },
 ] as const

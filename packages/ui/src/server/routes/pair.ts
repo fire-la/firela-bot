@@ -4,16 +4,20 @@
  * Lets the firela-app mobile client obtain a long-lived app JWT (`role: "app"`)
  * without the setup password. Reuses the ADR-008 HS256 + KV auth infra.
  *
- *   POST /api/pair/issue    (owner)   mint a single-use 8-char claim code (10m TTL)
- *   POST /api/pair/redeem   (public)  validate the claim, sign an app JWT, store
- *                                     the pairing/revocation record
- *   POST /api/pair/revoke   (owner)   mark a paired app revoked
- *   GET  /api/pair/apps     (owner)   list paired devices, newest-first
- *   GET  /api/pair/config   (public)  Turnstile discovery for the redeem client
+ *   POST /api/pair/issue           (owner; app with owner-password proof)
+ *                                  mint a single-use 8-char claim code (10m TTL)
+ *   POST /api/pair/redeem          (public)  validate the claim, sign an app JWT,
+ *                                            store the pairing/revocation record
+ *   POST /api/pair/establish-owner (app)     ownerless start (issue #26): create
+ *                                            the owner password + first claim
+ *   POST /api/pair/revoke          (owner)   mark a paired app revoked
+ *   GET  /api/pair/apps            (owner)   list paired devices, newest-first
+ *   GET  /api/pair/config          (public)  Turnstile discovery for the redeem client
  *
- * `/redeem` is public (the claim code IS the auth); `/issue` + `/revoke` are
- * owner-only — enforced centrally by `authMiddleware`'s app-role default-deny
- * (neither is in `APP_ROLE_ALLOWLIST`).
+ * `/redeem` is public (the claim code IS the auth). `/issue` is app-reachable
+ * only with the owner password in the body (proof-per-request — Track C,
+ * issue #26: the no-SPA CF cohort has no other mint surface, and the app never
+ * receives an owner credential). `/revoke` + `GET /apps` stay owner-only.
  *
  * @packageDocumentation
  */
@@ -27,15 +31,20 @@ import {
   PAIR_APP_TTL_SEC,
   PAIR_BOOTSTRAP_DONE_KEY,
   PAIR_CLAIM_TTL_SEC,
+  SETUP_PASSWORD_KEY,
 } from "../constants.js"
 import {
   ensurePairClaimTable,
+  getOwnerProofFailure,
   mintPendingClaim,
   normalizeClaimCode,
   nowSec,
+  proofLockRemaining,
   signAppToken,
   verifyTurnstileToken,
+  type OwnerProofFailure,
 } from "../lib/pair-helpers.js"
+import { getUserId, isApp } from "../middleware/auth.js"
 
 export const pairRoutes = new Hono<{ Bindings: Env }>()
 
@@ -50,12 +59,56 @@ const revokeSchema = z.object({
   appId: z.string().min(1, "appId is required"),
 })
 
+const establishOwnerSchema = z.object({
+  password: z.string().min(1, "Password is required"),
+})
+
+/** Map a failed owner-password proof onto its JSON error response. */
+function proofErrorResponse(
+  c: { json: (body: unknown, status: number) => Response },
+  failure: OwnerProofFailure,
+): Response {
+  const body: Record<string, unknown> = {
+    success: false,
+    error: failure.error,
+    errorCode: failure.errorCode,
+  }
+  if (failure.retryAfter != null) body.retryAfter = failure.retryAfter
+  return c.json(body, failure.status)
+}
+
 /**
- * POST /api/pair/issue (owner)
+ * POST /api/pair/issue (owner; app with owner-password proof)
  *
- * Mint a single-use claim code. Owner-only (not app-allowlisted).
+ * Mint a single-use claim code. The owner path is unchanged (empty body).
+ *
+ * App-role branch (issue #26 / Track C): the no-SPA CF cohort's only mint
+ * surface. The caller must carry the owner password in the body —
+ * proof-per-request, so the app never receives an owner credential. The
+ * `isApp()` check deliberately precedes body parsing: the owner path has
+ * always sent an empty body and must not start 400ing.
  */
 pairRoutes.post("/issue", async (c) => {
+  if (isApp(c)) {
+    const body = (await c.req.json().catch(() => null)) as {
+      password?: unknown
+    } | null
+    const failure = await getOwnerProofFailure(
+      c.env,
+      getUserId(c)!,
+      body?.password,
+    )
+    if (failure) return proofErrorResponse(c, failure)
+    const { code, createdAt } = await mintPendingClaim(c.env.DB, {
+      origin: "app",
+    })
+    return c.json({
+      success: true,
+      claimCode: code,
+      workerUrl: new URL(c.req.url).origin,
+      expiresAt: createdAt + PAIR_CLAIM_TTL_SEC,
+    })
+  }
   const { code, createdAt } = await mintPendingClaim(c.env.DB)
   return c.json({
     success: true,
@@ -64,6 +117,71 @@ pairRoutes.post("/issue", async (c) => {
     expiresAt: createdAt + PAIR_CLAIM_TTL_SEC,
   })
 })
+
+/**
+ * POST /api/pair/establish-owner (app only)
+ *
+ * The CF-cohort funnel (deploy -> bootstrap redeem) never sets an owner
+ * password. This is the ownerless start of Track C: the paired app creates
+ * the password, and the first claim code rides the same response (M1b) — the
+ * user just chose the password, re-typing it 30s later buys nothing. Never
+ * returns a token: the app keeps its app-role JWT and proves per request.
+ *
+ * Concurrent first-writes are last-write-wins; the loser of the race gets
+ * 409 OWNER_ALREADY_ESTABLISHED (both callers hold valid paired-app JWTs, so
+ * the race is benign — recorded in ADR-009).
+ */
+pairRoutes.post(
+  "/establish-owner",
+  zValidator("json", establishOwnerSchema),
+  async (c) => {
+    if (!isApp(c)) {
+      return c.json(
+        {
+          success: false,
+          error: "Only a paired app can establish the owner password",
+          errorCode: "AUTH_INVALID_ROLE",
+        },
+        403,
+      )
+    }
+    const appId = getUserId(c)!
+    // No password comparison happens here, so there is nothing to guess — but
+    // the shared per-appId lock still applies (a caller that burned the lock
+    // guessing on /issue does not get a side door).
+    const lockRemaining = await proofLockRemaining(c.env.DB, appId)
+    if (lockRemaining > 0) {
+      return proofErrorResponse(c, {
+        status: 429,
+        error: "Too many failed owner-password attempts; try again later",
+        errorCode: "PROOF_THROTTLED",
+        retryAfter: lockRemaining,
+      })
+    }
+    const stored = (await c.env.CONFIG.get(SETUP_PASSWORD_KEY)) as string | null
+    if (stored) {
+      return c.json(
+        {
+          success: false,
+          error: "Owner password already established",
+          errorCode: "OWNER_ALREADY_ESTABLISHED",
+        },
+        409,
+      )
+    }
+    const { password } = c.req.valid("json")
+    await c.env.CONFIG.put(SETUP_PASSWORD_KEY, password)
+    const { code, createdAt } = await mintPendingClaim(c.env.DB, {
+      origin: "app",
+    })
+    return c.json({
+      success: true,
+      claimCode: code,
+      workerUrl: new URL(c.req.url).origin,
+      expiresAt: createdAt + PAIR_CLAIM_TTL_SEC,
+    })
+  },
+)
 
 /**
  * POST /api/pair/redeem (public — claim code is the auth)
