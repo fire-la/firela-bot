@@ -275,6 +275,10 @@ export async function getOwnerProofFailure(
       errorCode: "OWNER_PASSWORD_REQUIRED",
     }
   }
+  // Plaintext equality matches the /auth/setup + PUT /api/settings/password
+  // precedent (ADR-009 Track C residual note); hashing the stored password is
+  // a cross-cutting follow-up across all three compare sites, not a
+  // per-surface patch.
   if (password !== stored) {
     await recordProofFailure(env.DB, appId)
     return {
@@ -288,39 +292,20 @@ export async function getOwnerProofFailure(
 }
 
 /**
- * Whether any non-revoked pairing record still exists (middleware semantics:
- * record present and `revoked !== true`). Gates the /auth/setup ownerless
- * closure — an all-revoked/all-expired deployment is abandoned and stays
- * recoverable by first-caller setup. Reads pages until the first live record.
+ * Whether a live (non-revoked) pairing record exists (middleware semantics:
+ * record present and `revoked !== true`), optionally excluding one app by KV
+ * key suffix. Gates the /auth/setup ownerless closure without an exclusion
+ * (an all-revoked/all-expired deployment is abandoned and stays recoverable
+ * by first-caller setup); with one it is the LAST_DEVICE guard for the
+ * app-role revoke (issue #26 fast-follow: a phone-only deployment must
+ * always keep one live device, or the mint surface becomes unreachable).
+ * Exclusion identity is the KV key suffix — the record's own appId field can
+ * be missing on malformed rows, but the key is what the middleware's
+ * revocation read uses. Reads pages until the first matching record.
  */
-export async function hasLivePairedApp(kv: KVNamespace): Promise<boolean> {
-  let cursor: string | undefined
-  for (;;) {
-    const page = await kv.list({ prefix: PAIR_APP_PREFIX, cursor })
-    const records = await Promise.all(
-      page.keys.map(({ name }) =>
-        kv.get(name, "json") as Promise<{ revoked?: unknown } | null>,
-      ),
-    )
-    if (records.some((rec) => rec && rec.revoked !== true)) return true
-    if (page.list_complete === false) cursor = page.cursor
-    else break
-  }
-  return false
-}
-
-/**
- * Whether a live (non-revoked) pairing record exists OTHER than
- * `excludeAppId` — the LAST_DEVICE guard for the app-role revoke (issue #26
- * fast-follow): a phone-only deployment must always keep one live device, or
- * the mint surface becomes unreachable (GET / is closed by the done-flag and
- * there is no SPA). Identity is the KV key suffix — the record's own appId
- * field can be missing on malformed rows, but the key is what the
- * middleware's revocation read uses.
- */
-export async function hasOtherLivePairedApp(
+export async function hasLivePairedApp(
   kv: KVNamespace,
-  excludeAppId: string,
+  excludeAppId?: string,
 ): Promise<boolean> {
   let cursor: string | undefined
   for (;;) {

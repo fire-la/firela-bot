@@ -38,7 +38,7 @@ import {
 import {
   ensurePairClaimTable,
   getOwnerProofFailure,
-  hasOtherLivePairedApp,
+  hasLivePairedApp,
   mintPendingClaim,
   normalizeClaimCode,
   nowSec,
@@ -132,9 +132,10 @@ pairRoutes.post("/issue", async (c) => {
  * user just chose the password, re-typing it 30s later buys nothing. Never
  * returns a token: the app keeps its app-role JWT and proves per request.
  *
- * Concurrent first-writes are last-write-wins; the loser of the race gets
- * 409 OWNER_ALREADY_ESTABLISHED (both callers hold valid paired-app JWTs, so
- * the race is benign — recorded in ADR-009).
+ * Concurrent first-writes: a truly concurrent pair can both observe "no
+ * password", both write, and both mint (last write wins; benign — both hold
+ * valid paired-app JWTs, recorded in ADR-009). A caller whose check lands
+ * after another's write gets 409 OWNER_ALREADY_ESTABLISHED.
  */
 pairRoutes.post(
   "/establish-owner",
@@ -397,7 +398,7 @@ pairRoutes.post("/revoke", zValidator("json", revokeSchema), async (c) => {
   if (
     isApp(c) &&
     rec.revoked !== true &&
-    !(await hasOtherLivePairedApp(c.env.CONFIG, appId))
+    !(await hasLivePairedApp(c.env.CONFIG, appId))
   ) {
     // Defense in depth: with a consistent KV view the caller's own live
     // record (middleware-checked) always satisfies hasOtherLivePairedApp, so

@@ -23,7 +23,6 @@ import { ensureAuthSecret } from "../lib/auth-helpers.js"
 import {
   generateClaimCode,
   hasLivePairedApp,
-  hasOtherLivePairedApp,
   normalizeClaimCode,
 } from "../lib/pair-helpers.js"
 import { makeD1 } from "../../test/fake-d1.js"
@@ -822,16 +821,16 @@ describe("KV live-record walks (guards + /auth/setup closure)", () => {
     ).toBe(true)
   })
 
-  it("hasOtherLivePairedApp: excludes by KV key suffix, ignores revoked records", async () => {
+  it("hasLivePairedApp(excludeAppId): excludes by KV key suffix, ignores revoked records", async () => {
     const kv = asKv(makeKv({ ...live("a"), ...live("b") }))
-    expect(await hasOtherLivePairedApp(kv, "a")).toBe(true) // b is other
-    expect(await hasOtherLivePairedApp(kv, "b")).toBe(true) // a is other
+    expect(await hasLivePairedApp(kv, "a")).toBe(true) // b is other
+    expect(await hasLivePairedApp(kv, "b")).toBe(true) // a is other
 
     const onlyA = asKv(makeKv(live("a")))
-    expect(await hasOtherLivePairedApp(onlyA, "a")).toBe(false)
+    expect(await hasLivePairedApp(onlyA, "a")).toBe(false)
 
     const revokedSibling = asKv(makeKv({ ...live("a"), ...revoked("b") }))
-    expect(await hasOtherLivePairedApp(revokedSibling, "a")).toBe(false)
+    expect(await hasLivePairedApp(revokedSibling, "a")).toBe(false)
   })
 })
 
