@@ -309,6 +309,43 @@ export async function hasLivePairedApp(kv: KVNamespace): Promise<boolean> {
   return false
 }
 
+/**
+ * Whether a live (non-revoked) pairing record exists OTHER than
+ * `excludeAppId` — the LAST_DEVICE guard for the app-role revoke (issue #26
+ * fast-follow): a phone-only deployment must always keep one live device, or
+ * the mint surface becomes unreachable (GET / is closed by the done-flag and
+ * there is no SPA). Identity is the KV key suffix — the record's own appId
+ * field can be missing on malformed rows, but the key is what the
+ * middleware's revocation read uses.
+ */
+export async function hasOtherLivePairedApp(
+  kv: KVNamespace,
+  excludeAppId: string,
+): Promise<boolean> {
+  let cursor: string | undefined
+  for (;;) {
+    const page = await kv.list({ prefix: PAIR_APP_PREFIX, cursor })
+    const entries = await Promise.all(
+      page.keys.map(async ({ name }) => ({
+        name,
+        rec: (await kv.get(name, "json")) as { revoked?: unknown } | null,
+      })),
+    )
+    for (const { name, rec } of entries) {
+      if (
+        rec &&
+        rec.revoked !== true &&
+        name.slice(PAIR_APP_PREFIX.length) !== excludeAppId
+      ) {
+        return true
+      }
+    }
+    if (page.list_complete === false) cursor = page.cursor
+    else break
+  }
+  return false
+}
+
 /** Cloudflare Turnstile server-side verification endpoint. */
 const TURNSTILE_SITEVERIFY_URL =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify"

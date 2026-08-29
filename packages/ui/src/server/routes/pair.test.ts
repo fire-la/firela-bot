@@ -20,7 +20,12 @@ import { sign } from "hono/jwt"
 import { pairRoutes } from "./pair.js"
 import { authMiddleware } from "../middleware/auth.js"
 import { ensureAuthSecret } from "../lib/auth-helpers.js"
-import { normalizeClaimCode, generateClaimCode } from "../lib/pair-helpers.js"
+import {
+  generateClaimCode,
+  hasLivePairedApp,
+  hasOtherLivePairedApp,
+  normalizeClaimCode,
+} from "../lib/pair-helpers.js"
 import { makeD1 } from "../../test/fake-d1.js"
 import {
   PAIR_APP_PREFIX,
@@ -801,6 +806,35 @@ describe("claim-code shape", () => {
   })
 })
 
+describe("KV live-record walks (guards + /auth/setup closure)", () => {
+  // The in-memory fake is structurally what the walks use (get/list).
+  const asKv = (kv: ReturnType<typeof makeKv>) =>
+    kv as unknown as Parameters<typeof hasLivePairedApp>[0]
+  const live = (appId: string) => ({ [PAIR_APP_PREFIX + appId]: { appId, pairedAt: 1, revoked: false } })
+  const revoked = (appId: string) => ({ [PAIR_APP_PREFIX + appId]: { appId, pairedAt: 1, revoked: true } })
+
+  it("hasLivePairedApp: true iff a non-revoked record exists", async () => {
+    expect(await hasLivePairedApp(asKv(makeKv()))).toBe(false)
+    expect(await hasLivePairedApp(asKv(makeKv(revoked("a"))))).toBe(false)
+    expect(await hasLivePairedApp(asKv(makeKv(live("a"))))).toBe(true)
+    expect(
+      await hasLivePairedApp(asKv(makeKv({ ...revoked("a"), ...live("b") }))),
+    ).toBe(true)
+  })
+
+  it("hasOtherLivePairedApp: excludes by KV key suffix, ignores revoked records", async () => {
+    const kv = asKv(makeKv({ ...live("a"), ...live("b") }))
+    expect(await hasOtherLivePairedApp(kv, "a")).toBe(true) // b is other
+    expect(await hasOtherLivePairedApp(kv, "b")).toBe(true) // a is other
+
+    const onlyA = asKv(makeKv(live("a")))
+    expect(await hasOtherLivePairedApp(onlyA, "a")).toBe(false)
+
+    const revokedSibling = asKv(makeKv({ ...live("a"), ...revoked("b") }))
+    expect(await hasOtherLivePairedApp(revokedSibling, "a")).toBe(false)
+  })
+})
+
 // --- Track C (issue #26): app-side mint via owner-password proof --------------
 
 /** KV state of one live paired device (`app-1`) with the owner password set. */
@@ -1057,5 +1091,151 @@ describe("POST /api/pair/establish-owner (app only, ownerless start — #26)", (
       "PROOF_THROTTLED",
     )
     expect(kv._raw(SETUP_PASSWORD_KEY)).toBeNull() // nothing written
+  })
+})
+
+describe("app-side device management (revoke + apps, #26 fast-follow)", () => {
+  /** Two live devices paired, owner password set — the realistic state. */
+  function twoDevicesKv() {
+    return makeKv({
+      [PAIR_APP_PREFIX + "app-1"]: { appId: "app-1", pairedAt: 1, revoked: false },
+      [PAIR_APP_PREFIX + "app-2"]: { appId: "app-2", pairedAt: 2, revoked: false },
+      [SETUP_PASSWORD_KEY]: "hunter2",
+    })
+  }
+
+  it("app revokes another device with the owner password", async () => {
+    const kv = twoDevicesKv()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/revoke", kv, makeD1(), appToken, {
+      appId: "app-2",
+      password: "hunter2",
+    })
+    expect(res.status).toBe(200)
+    await expect(kv.get(PAIR_APP_PREFIX + "app-2", "json")).resolves.toMatchObject({
+      revoked: true,
+    })
+  })
+
+  it("401 OWNER_PASSWORD_INVALID blocks the revoke on a wrong password", async () => {
+    const kv = twoDevicesKv()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/revoke", kv, makeD1(), appToken, {
+      appId: "app-2",
+      password: "wrong",
+    })
+    expect(res.status).toBe(401)
+    await expect(kv.get(PAIR_APP_PREFIX + "app-2", "json")).resolves.toMatchObject({
+      revoked: false,
+    })
+  })
+
+  it("400 OWNER_PASSWORD_MISSING blocks the revoke without a password", async () => {
+    const kv = twoDevicesKv()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/revoke", kv, makeD1(), appToken, {
+      appId: "app-2",
+    })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "OWNER_PASSWORD_MISSING",
+    )
+  })
+
+  it("409 SELF_REVOKE: the caller cannot revoke its own device", async () => {
+    const kv = twoDevicesKv()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/revoke", kv, makeD1(), appToken, {
+      appId: "app-1",
+      password: "hunter2",
+    })
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "SELF_REVOKE",
+    )
+    await expect(kv.get(PAIR_APP_PREFIX + "app-1", "json")).resolves.toMatchObject({
+      revoked: false,
+    })
+  })
+
+  it("owner path has no app guards: may revoke any device including the last", async () => {
+    const kv = pairedKv() // only app-1, live
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const res = await post(app, "/api/pair/revoke", kv, makeD1(), owner, {
+      appId: "app-1",
+    })
+    expect(res.status).toBe(200)
+    await expect(kv.get(PAIR_APP_PREFIX + "app-1", "json")).resolves.toMatchObject({
+      revoked: true,
+    })
+  })
+
+  it("POST /apps with the owner password returns the device list", async () => {
+    const kv = twoDevicesKv()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const res = await post(app, "/api/pair/apps", kv, makeD1(), appToken, {
+      password: "hunter2",
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      success: boolean
+      apps: { appId: string }[]
+    }
+    expect(body.success).toBe(true)
+    expect(body.apps.map((a) => a.appId)).toEqual(["app-2", "app-1"])
+  })
+
+  it("POST /apps without/with wrong password is refused", async () => {
+    const kv = twoDevicesKv()
+    const app = pairApp()
+    const appToken = await makeToken(kv, "app", "app-1")
+
+    const noBody = await post(app, "/api/pair/apps", kv, makeD1(), appToken)
+    expect(noBody.status).toBe(400)
+    expect(((await noBody.json()) as { errorCode: string }).errorCode).toBe(
+      "OWNER_PASSWORD_MISSING",
+    )
+
+    const wrong = await post(app, "/api/pair/apps", kv, makeD1(), appToken, {
+      password: "wrong",
+    })
+    expect(wrong.status).toBe(401)
+    expect(((await wrong.json()) as { errorCode: string }).errorCode).toBe(
+      "OWNER_PASSWORD_INVALID",
+    )
+  })
+
+  it("owner path regression: revoke without password, GET /apps unchanged", async () => {
+    const kv = twoDevicesKv()
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+
+    const revoke = await post(app, "/api/pair/revoke", kv, makeD1(), owner, {
+      appId: "app-2",
+    })
+    expect(revoke.status).toBe(200)
+
+    const list = await app.request(
+      "/api/pair/apps",
+      { headers: { Authorization: `Bearer ${owner}` } },
+      env(kv, makeD1()),
+    )
+    expect(list.status).toBe(200)
+    const body = (await list.json()) as {
+      apps: { appId: string; revoked: boolean }[]
+    }
+    expect(body.apps.map((a) => a.appId)).toEqual(["app-2", "app-1"])
+    expect(body.apps[0].revoked).toBe(true)
   })
 })

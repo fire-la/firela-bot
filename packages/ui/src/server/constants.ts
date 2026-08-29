@@ -120,4 +120,11 @@ export const APP_ROLE_ALLOWLIST = [
   // back the shared paths; the method+path allowlist entry alone mints nothing.
   { method: "POST", path: "/api/pair/issue" },
   { method: "POST", path: "/api/pair/establish-owner" },
+  // Device management from the app (#26 fast-follow): revoke + list share the
+  // same owner-password proof. POST /api/pair/apps is the proof-carrying
+  // variant (GET cannot carry a body cleanly and stays owner-only); revoke is
+  // guarded by SELF_REVOKE + LAST_DEVICE so a phone-only deployment can never
+  // brick itself (see routes/pair.ts).
+  { method: "POST", path: "/api/pair/revoke" },
+  { method: "POST", path: "/api/pair/apps" },
 ] as const

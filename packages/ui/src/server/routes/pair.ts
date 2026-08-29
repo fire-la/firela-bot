@@ -10,14 +10,16 @@
  *                                            store the pairing/revocation record
  *   POST /api/pair/establish-owner (app)     ownerless start (issue #26): create
  *                                            the owner password + first claim
- *   POST /api/pair/revoke          (owner)   mark a paired app revoked
+ *   POST /api/pair/revoke          (owner; app with proof + guards)
  *   GET  /api/pair/apps            (owner)   list paired devices, newest-first
+ *   POST /api/pair/apps            (app with owner-password proof) same list
  *   GET  /api/pair/config          (public)  Turnstile discovery for the redeem client
  *
- * `/redeem` is public (the claim code IS the auth). `/issue` is app-reachable
- * only with the owner password in the body (proof-per-request — Track C,
- * issue #26: the no-SPA CF cohort has no other mint surface, and the app never
- * receives an owner credential). `/revoke` + `GET /apps` stay owner-only.
+ * `/redeem` is public (the claim code IS the auth). `/issue`, `/revoke`, and
+ * `POST /apps` are app-reachable only with the owner password in the body
+ * (proof-per-request — Track C, issue #26: the no-SPA CF cohort has no other
+ * mint/revocation surface, and the app never receives an owner credential).
+ * `GET /apps` and the owner paths stay owner-only.
  *
  * @packageDocumentation
  */
@@ -36,6 +38,7 @@ import {
 import {
   ensurePairClaimTable,
   getOwnerProofFailure,
+  hasOtherLivePairedApp,
   mintPendingClaim,
   normalizeClaimCode,
   nowSec,
@@ -57,6 +60,8 @@ const redeemSchema = z.object({
 
 const revokeSchema = z.object({
   appId: z.string().min(1, "appId is required"),
+  // App-role proof only (#26 fast-follow); owners omit it.
+  password: z.string().optional(),
 })
 
 const establishOwnerSchema = z.object({
@@ -347,14 +352,37 @@ pairRoutes.get("/config", (c) => {
 })
 
 /**
- * POST /api/pair/revoke (owner)
+ * POST /api/pair/revoke (owner; app with owner-password proof)
  *
  * Mark a paired app revoked. Re-puts with the same TTL so the record still
  * self-prunes ~max-token-age later (a bare put would make it permanent).
+ *
+ * App-role guards (#26 fast-follow), both because an unlabeled UUID list
+ * invites a coin-flip self-destruct that bricks a phone-only deployment:
+ * - SELF_REVOKE: the caller cannot revoke its own appId (it would lock
+ *   itself out mid-session with no re-pairing surface left).
+ * - LAST_DEVICE: the last non-revoked record cannot be revoked — the
+ *   deployment must always keep one device that can still mint.
  */
 pairRoutes.post("/revoke", zValidator("json", revokeSchema), async (c) => {
-  const { appId } = c.req.valid("json")
+  const { appId, password } = c.req.valid("json")
   const key = PAIR_APP_PREFIX + appId
+
+  if (isApp(c)) {
+    const failure = await getOwnerProofFailure(c.env, getUserId(c)!, password)
+    if (failure) return proofErrorResponse(c, failure)
+  }
+  // Inert for owners (their sub is "owner", never a record appId).
+  if (getUserId(c) === appId) {
+    return c.json(
+      {
+        success: false,
+        error: "Cannot revoke the calling device; pair a replacement first",
+        errorCode: "SELF_REVOKE",
+      },
+      409,
+    )
+  }
 
   const rec = (await c.env.CONFIG.get(key, "json")) as
     | { appId?: string; pairedAt?: number; revoked?: boolean }
@@ -363,6 +391,27 @@ pairRoutes.post("/revoke", zValidator("json", revokeSchema), async (c) => {
     return c.json(
       { success: false, error: "App is not paired", errorCode: "APP_NOT_PAIRED" },
       404,
+    )
+  }
+
+  if (
+    isApp(c) &&
+    rec.revoked !== true &&
+    !(await hasOtherLivePairedApp(c.env.CONFIG, appId))
+  ) {
+    // Defense in depth: with a consistent KV view the caller's own live
+    // record (middleware-checked) always satisfies hasOtherLivePairedApp, so
+    // SELF_REVOKE above shadows this guard in practice. It still fires under
+    // KV eventual-consistency windows and keeps the invariant if the
+    // middleware's revocation contract ever changes: an app-role revoke may
+    // never leave the deployment without a live record (mint stays reachable).
+    return c.json(
+      {
+        success: false,
+        error: "Cannot revoke the last paired device",
+        errorCode: "LAST_DEVICE",
+      },
+      409,
     )
   }
 
@@ -376,22 +425,22 @@ pairRoutes.post("/revoke", zValidator("json", revokeSchema), async (c) => {
 })
 
 /**
- * GET /api/pair/apps (owner)
- *
- * List paired devices (KV prefix PAIR_APP_PREFIX), newest-first. KV list is
- * paginated (max 1000 keys/page) — loop the cursor. Records failing the
- * shape check are skipped, not fatal.
+ * Collect paired devices from KV (prefix PAIR_APP_PREFIX), newest-first.
+ * KV list is paginated (max 1000 keys/page) — loop the cursor. Records
+ * failing the shape check are skipped, not fatal.
  */
-pairRoutes.get("/apps", async (c) => {
+async function collectPairedApps(
+  config: KVNamespace,
+): Promise<{ success: true; apps: { appId: string; pairedAt: number; revoked: boolean }[] }> {
   const apps: { appId: string; pairedAt: number; revoked: boolean }[] = []
   let cursor: string | undefined
   for (;;) {
-    const page = await c.env.CONFIG.list({ prefix: PAIR_APP_PREFIX, cursor })
+    const page = await config.list({ prefix: PAIR_APP_PREFIX, cursor })
     // Keys within a page are independent — fetch in parallel so N records
     // cost one KV-read round trip, not N serial awaits.
     const records = await Promise.all(
       page.keys.map(({ name }) =>
-        c.env.CONFIG.get(name, "json") as Promise<
+        config.get(name, "json") as Promise<
           { appId?: unknown; pairedAt?: unknown; revoked?: unknown } | null
         >,
       ),
@@ -416,7 +465,38 @@ pairRoutes.get("/apps", async (c) => {
     else break
   }
   apps.sort((a, b) => b.pairedAt - a.pairedAt)
-  return c.json({ success: true, apps })
+  return { success: true, apps }
+}
+
+/**
+ * GET /api/pair/apps (owner)
+ *
+ * List paired devices. Owner-only (not allowlisted) — the app uses the
+ * proof-carrying POST variant below.
+ */
+pairRoutes.get("/apps", async (c) => {
+  return c.json(await collectPairedApps(c.env.CONFIG))
+})
+
+/**
+ * POST /api/pair/apps (app with owner-password proof)
+ *
+ * Proof-carrying list variant for the native client (#26 fast-follow): GET
+ * cannot carry a proof body cleanly, and a bare GET allowlist entry would
+ * hand a token-holder the device inventory for free. Same response as the
+ * owner GET; every caller (any role) proves with the owner password.
+ */
+pairRoutes.post("/apps", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    password?: unknown
+  } | null
+  const failure = await getOwnerProofFailure(
+    c.env,
+    getUserId(c) ?? "",
+    body?.password,
+  )
+  if (failure) return proofErrorResponse(c, failure)
+  return c.json(await collectPairedApps(c.env.CONFIG))
 })
 
 export default pairRoutes
