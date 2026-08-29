@@ -147,6 +147,11 @@ app.route("/api/pair", pairRoutes)
 import { accountsRoutes } from "./routes/accounts.js"
 app.route("/api/accounts", accountsRoutes)
 
+// External account link routes (issue #18 Tier 0) — owner-only (not in
+// APP_ROLE_ALLOWLIST): mapping writes vlt state via the owner's VLT credential.
+import { accountLinksRoutes } from "./routes/account-links.js"
+app.route("/api/account-links", accountLinksRoutes)
+
 // Config routes (config management, system status, test endpoints)
 import { configRoutes } from "./routes/config.js"
 app.route("/api", configRoutes)
