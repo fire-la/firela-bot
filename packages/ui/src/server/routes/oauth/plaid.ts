@@ -32,44 +32,109 @@ const exchangeTokenSchema = z.object({
   sessionId: z.string().optional(),
 })
 
+// Allowlisted country codes (Plaid API country_codes enum, fail-closed)
+const SUPPORTED_COUNTRY_CODES = [
+  "US",
+  "CA",
+  "GB",
+  "FR",
+  "DE",
+  "ES",
+  "IE",
+  "NL",
+  "IT",
+  "PL",
+  "DK",
+  "NO",
+  "SE",
+  "EE",
+  "LT",
+  "LV",
+  "PT",
+] as const
+const SUPPORTED_PRODUCTS = ["transactions"] as const
+
+// "us, CA" -> ["US","CA"] / "transactions" -> ["transactions"]:
+// trim + dedupe, drop empty segments. Country codes uppercase (ISO 3166-1
+// alpha-2); product names stay lowercase (Plaid API identifiers).
+const parseCountryCsv = (value: string) => [
+  ...new Set(
+    value
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean),
+  ),
+]
+const parseProductCsv = (value: string) => [
+  ...new Set(
+    value
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  ),
+]
+
+const linkTokenQuerySchema = z.object({
+  country_codes: z
+    .string()
+    .optional()
+    .transform((v) => parseCountryCsv(v ?? "US"))
+    .pipe(z.array(z.enum(SUPPORTED_COUNTRY_CODES)).min(1)),
+  products: z
+    .string()
+    .optional()
+    .transform((v) => parseProductCsv(v ?? "transactions"))
+    .pipe(z.array(z.enum(SUPPORTED_PRODUCTS)).min(1)),
+})
+
 /**
  * GET /api/oauth/plaid/link-token
  *
  * Create a Plaid Link token for initializing the Plaid Link frontend.
  * Proxied through firela-relay.
  *
+ * Query params (optional, allowlisted — invalid values fail with 400
+ * before reaching the relay):
+ * - country_codes: comma-separated Plaid country codes (default: US)
+ * - products: comma-separated Plaid products (default: transactions)
+ *
  * Response:
  * - success: boolean
  * - linkToken: string - Link token for Plaid Link initialization
  */
-plaidRoutes.get("/link-token", async (c) => {
-  try {
-    const client = await getPlaidRelayClient(c.env)
-    const result = await client.createLinkToken({
-      client_name: "BillClaw",
-      language: "en",
-      country_codes: ["US"],
-      user: { client_user_id: `user_${Date.now()}` },
-      products: ["transactions"],
-    })
+plaidRoutes.get(
+  "/link-token",
+  zValidator("query", linkTokenQuerySchema),
+  async (c) => {
+    try {
+      const { country_codes, products } = c.req.valid("query")
+      const client = await getPlaidRelayClient(c.env)
+      const result = await client.createLinkToken({
+        client_name: "BillClaw",
+        language: "en",
+        country_codes,
+        user: { client_user_id: `user_${Date.now()}` },
+        products,
+      })
 
-    return c.json({
-      success: true,
-      linkToken: result.link_token,
-    })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create link token"
-    console.error("[plaid_link_token]", error)
+      return c.json({
+        success: true,
+        linkToken: result.link_token,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to create link token"
+      console.error("[plaid_link_token]", error)
 
-    return c.json(
-      {
-        success: false,
-        error: message,
-      },
-      500,
-    )
-  }
-})
+      return c.json(
+        {
+          success: false,
+          error: message,
+        },
+        500,
+      )
+    }
+  },
+)
 
 /**
  * POST /api/oauth/plaid/exchange
