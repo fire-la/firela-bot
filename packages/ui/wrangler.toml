@@ -11,14 +11,19 @@ compatibility_flags = ["nodejs_compat_v2"]
 
 # Static assets (React SPA build output)
 # SPA routing: return index.html for non-API, non-static routes
-# Note: run_worker_first defaults to false, so static assets are served first
-# When no asset matches, request goes to Worker (Hono)
-# When Worker returns 404, not_found_handling serves index.html
-# binding: exposes ASSETS fetcher to Worker for manual asset serving
+# Static assets are served first; when no asset matches, the request goes to
+# the Worker (Hono); when Worker returns 404, not_found_handling serves
+# index.html. binding: exposes ASSETS fetcher to Worker for manual asset serving
 [assets]
 directory = "dist"
 not_found_handling = "single-page-application"
 binding = "ASSETS"
+# Worker-first ONLY for the paths the Worker owns; every other path is served
+# by assets directly. WARNING: with an array, NON-matching paths NEVER reach
+# the Worker (assets-only — no fallback to Worker), so this list must cover
+# every public mount. "/" is here for the first-run bootstrap surface
+# (issue #21, routes/bootstrap.ts); new top-level mounts MUST be added here.
+run_worker_first = ["/", "/health", "/api/*", "/auth/*", "/webhook/*"]
 
 # D1 Database (shared with billclaw-worker)
 [[d1_databases]]

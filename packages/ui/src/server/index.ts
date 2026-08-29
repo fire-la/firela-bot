@@ -72,6 +72,13 @@ app.get("/health", (c) => {
 // Public Routes (no authentication required)
 // ============================================================================
 
+// First-run bootstrap surface (ADR-009 Decision C, issue #21) — plain-text
+// one-time pairing page on a fresh deployment; delegates to notFound (SPA
+// fallback) otherwise. Only reachable because wrangler.toml [assets] sets
+// run_worker_first = ["/"] — without it the assets layer serves "/" directly.
+import { bootstrapRoutes } from "./routes/bootstrap.js"
+app.route("/", bootstrapRoutes)
+
 // Auth routes (including /auth/setup for initial token)
 import { authRoutes } from "./routes/auth.js"
 app.route("/auth", authRoutes)

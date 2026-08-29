@@ -55,6 +55,9 @@ async function runDeploy(
   )
 
   success(`Worker deployed: ${result.workerUrl}`)
+  info(
+    `First run? Open ${result.workerUrl} to pair the mobile app (one-time pairing page).`,
+  )
 
   if (result.claimUrl) {
     warn(

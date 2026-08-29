@@ -19,6 +19,7 @@ import { normalizeClaimCode, generateClaimCode } from "../lib/pair-helpers.js"
 import {
   PAIR_APP_PREFIX,
   PAIR_APP_TTL_SEC,
+  PAIR_BOOTSTRAP_DONE_KEY,
   PAIR_CLAIM_PREFIX,
   PAIR_CLAIM_TTL_SEC,
   PAIR_TOKEN_TTL_SEC,
@@ -166,6 +167,15 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
     expect(used.appId).toBe(body.appId)
     const rec = JSON.parse(kv._raw(PAIR_APP_PREFIX + body.appId)!)
     expect(rec).toMatchObject({ appId: body.appId, revoked: false })
+
+    // Bootstrap surface closure (issue #21): any successful redeem permanently
+    // closes GET / — flag value records the pairing, put carries no TTL.
+    const done = JSON.parse(kv._raw(PAIR_BOOTSTRAP_DONE_KEY)!)
+    expect(done.appId).toBe(body.appId)
+    expect(typeof done.completedAt).toBe("number")
+    expect(
+      kv._puts.find((p) => p.key === PAIR_BOOTSTRAP_DONE_KEY)?.ttl,
+    ).toBeUndefined()
   })
 
   it("redeemed token reaches the allowlisted sync routes", async () => {

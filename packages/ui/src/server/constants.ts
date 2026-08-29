@@ -50,6 +50,19 @@ export const PAIR_TOKEN_TTL_SEC = 365 * 24 * 60 * 60
 export const PAIR_APP_TTL_SEC = PAIR_TOKEN_TTL_SEC
 
 /**
+ * First-run bootstrap surface (ADR-009 Decision C, issue #21).
+ *
+ * DONE    — deployment-lifetime flag (NO TTL): set by any successful
+ *           POST /api/pair/redeem. Value: { appId, completedAt }. Together with
+ *           SETUP_PASSWORD_KEY (owner setup closes the surface too) it gates
+ *           GET / in routes/bootstrap.ts.
+ * CURRENT — pointer to the still-pending bootstrap claim code, so page refreshes
+ *           reuse one code instead of minting many (TTL = PAIR_CLAIM_TTL_SEC).
+ */
+export const PAIR_BOOTSTRAP_DONE_KEY = "firela:pair:bootstrap_done"
+export const PAIR_BOOTSTRAP_CURRENT_KEY = "firela:pair:bootstrap:current"
+
+/**
  * Method+path tuples an `app`-role JWT may reach (exact match). Method-aware
  * because path-based allowlisting is unsafe: `GET /api/config` (masked read)
  * shares a path with `PUT /api/config` (owner write), and

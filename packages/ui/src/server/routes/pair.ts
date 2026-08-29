@@ -23,6 +23,7 @@ import type { Env } from "../index.js"
 import {
   PAIR_APP_PREFIX,
   PAIR_APP_TTL_SEC,
+  PAIR_BOOTSTRAP_DONE_KEY,
   PAIR_CLAIM_PREFIX,
   PAIR_CLAIM_TTL_SEC,
 } from "../constants.js"
@@ -122,6 +123,17 @@ pairRoutes.post("/redeem", zValidator("json", redeemSchema), async (c) => {
     PAIR_APP_PREFIX + appId,
     JSON.stringify({ appId, pairedAt: nowSec(), revoked: false }),
     { expirationTtl: PAIR_APP_TTL_SEC },
+  )
+
+  // Close the first-run bootstrap surface (issue #21): GET / stops rendering
+  // the one-time pairing page after any successful redeem. Last write before
+  // the return so the surface only closes on a fully successful redeem.
+  // Unconditional and permanent (no TTL — a deployment-lifetime flag, unlike
+  // the claims above). Accepted: KV eventual consistency can leave GET /
+  // rendering for ~60s (same class as the no-CAS redeem race, ADR-009 D2).
+  await c.env.CONFIG.put(
+    PAIR_BOOTSTRAP_DONE_KEY,
+    JSON.stringify({ appId, completedAt: nowSec() }),
   )
 
   return c.json({
