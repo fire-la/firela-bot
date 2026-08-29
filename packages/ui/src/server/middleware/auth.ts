@@ -27,6 +27,7 @@ const PUBLIC_PATHS = [
   "/auth", // Auth routes (including /auth/setup)
   "/webhook", // Webhook routes (use HMAC verification)
   "/api/pair/redeem", // Public pairing redemption (the claim code is the auth)
+  "/api/pair/config", // Pre-redeem Turnstile discovery (sitekey + enabled flag, #23)
   "/api/relay/health", // Pre-login relay probe (Gmail relay-only flow)
 ]
 

@@ -6,11 +6,14 @@
  * owner-only pair endpoints by an app token lives here too (APP_ROLE_PATH_DENIED).
  * Claims are exercised against the shared fake D1 (issue #24): the atomic-flip
  * specs (concurrent redeem, expiry) are the single-use regression tests.
+ * The Turnstile gate on redeem (issue #23) is covered with a stubbed siteverify
+ * fetch: the disabled path (no keys) never fetches, which is also the
+ * regression proof that zero-config deploys keep the bare claim-code flow.
  *
  * @packageDocumentation
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Hono } from "hono"
 import { sign } from "hono/jwt"
 
@@ -85,8 +88,12 @@ function pairApp() {
   return app
 }
 
-function env(kv: ReturnType<typeof makeKv>, db: ReturnType<typeof makeD1>) {
-  return { CONFIG: kv, DB: db } as never
+function env(
+  kv: ReturnType<typeof makeKv>,
+  db: ReturnType<typeof makeD1>,
+  extra: Record<string, string> = {},
+) {
+  return { CONFIG: kv, DB: db, ...extra } as never
 }
 
 /** Sign a token with the SAME secret authMiddleware will use (auto-seeded into kv). */
@@ -363,6 +370,183 @@ describe("POST /api/pair/redeem (public, claim-gated)", () => {
       env(kv, db),
     )
     expect(res.status).toBe(200)
+  })
+})
+
+describe("GET /api/pair/config (public, issue #23)", () => {
+  it("no keys configured -> disabled; reachable without auth (public path)", async () => {
+    // No Authorization header: if /api/pair/config were not in PUBLIC_PATHS,
+    // authMiddleware would 401 before the handler runs.
+    const res = await pairApp().request("/api/pair/config", {}, env(makeKv(), makeD1()))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      success: true,
+      turnstileEnabled: false,
+      sitekey: null,
+    })
+  })
+
+  it("both keys configured -> enabled with the sitekey", async () => {
+    const res = await pairApp().request(
+      "/api/pair/config",
+      {},
+      env(makeKv(), makeD1(), {
+        TURNSTILE_SITE_KEY: "site-key-1",
+        TURNSTILE_SECRET_KEY: "sec-1",
+      }),
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      success: true,
+      turnstileEnabled: true,
+      sitekey: "site-key-1",
+    })
+  })
+
+  it("half-configured (secret only) -> disabled: both keys are required", async () => {
+    // Pins the both-required semantics: enabled-with-no-sitekey would tell the
+    // app to render a widget it cannot render — a redeem lockout.
+    const res = await pairApp().request(
+      "/api/pair/config",
+      {},
+      env(makeKv(), makeD1(), { TURNSTILE_SECRET_KEY: "sec-1" }),
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      success: true,
+      turnstileEnabled: false,
+      sitekey: null,
+    })
+  })
+})
+
+describe("POST /api/pair/redeem + Turnstile (issue #23)", () => {
+  const turnstileEnv = {
+    TURNSTILE_SITE_KEY: "site-key-1",
+    TURNSTILE_SECRET_KEY: "sec-1",
+  }
+
+  beforeEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("enforcement on, token missing -> 400 TURNSTILE_REQUIRED, claim untouched", async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal("fetch", fetchSpy)
+    const kv = makeKv()
+    const db = makeD1()
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const { claimCode } = await issue(app, kv, db, owner)
+
+    const res = await app.request(
+      "/api/pair/redeem",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claimCode }),
+      },
+      env(kv, db, turnstileEnv),
+    )
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "TURNSTILE_REQUIRED",
+    )
+    // The gate runs before anything else: no siteverify round trip for a bare
+    // missing token, and the claim row is never touched.
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(db._row(claimCode)?.status).toBe("pending")
+  })
+
+  it("siteverify success -> full redeem, verified before the claim flip", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    })
+    vi.stubGlobal("fetch", fetchSpy)
+    const kv = makeKv()
+    const db = makeD1()
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const { claimCode } = await issue(app, kv, db, owner)
+
+    const res = await app.request(
+      "/api/pair/redeem",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claimCode, turnstileToken: "tok-1" }),
+      },
+      env(kv, db, turnstileEnv),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { pairingToken: string; appId: string }
+    expect(body.pairingToken.split(".").length).toBe(3)
+    expect(db._row(claimCode)).toMatchObject({ status: "used", app_id: body.appId })
+
+    // Outbound siteverify call shape: one POST with secret + token.
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchSpy.mock.calls[0] as [string, { method: string; body: string }]
+    expect(url).toBe("https://challenges.cloudflare.com/turnstile/v0/siteverify")
+    expect(init.method).toBe("POST")
+    expect(JSON.parse(init.body)).toEqual({ secret: "sec-1", response: "tok-1" })
+  })
+
+  it("siteverify rejects -> 403 TURNSTILE_INVALID; claim and KV untouched", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: false }),
+    })
+    vi.stubGlobal("fetch", fetchSpy)
+    const kv = makeKv()
+    const db = makeD1()
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const { claimCode } = await issue(app, kv, db, owner)
+
+    const res = await app.request(
+      "/api/pair/redeem",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claimCode, turnstileToken: "tok-1" }),
+      },
+      env(kv, db, turnstileEnv),
+    )
+    expect(res.status).toBe(403)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "TURNSTILE_INVALID",
+    )
+    // Rejected verify must not consume the claim, write a pairing record, or
+    // close the bootstrap surface (that only happens on full success).
+    expect(db._row(claimCode)?.status).toBe("pending")
+    expect(kv._puts.filter((p) => p.key.startsWith(PAIR_APP_PREFIX))).toHaveLength(0)
+    expect(kv._puts.filter((p) => p.key === PAIR_BOOTSTRAP_DONE_KEY)).toHaveLength(0)
+  })
+
+  it("siteverify unreachable -> 503 TURNSTILE_UNAVAILABLE (fail-closed)", async () => {
+    const fetchSpy = vi.fn().mockRejectedValue(new Error("network down"))
+    vi.stubGlobal("fetch", fetchSpy)
+    const kv = makeKv()
+    const db = makeD1()
+    const app = pairApp()
+    const owner = await makeToken(kv, "owner", "owner")
+    const { claimCode } = await issue(app, kv, db, owner)
+
+    const res = await app.request(
+      "/api/pair/redeem",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claimCode, turnstileToken: "tok-1" }),
+      },
+      env(kv, db, turnstileEnv),
+    )
+    expect(res.status).toBe(503)
+    expect(((await res.json()) as { errorCode: string }).errorCode).toBe(
+      "TURNSTILE_UNAVAILABLE",
+    )
+    expect(db._row(claimCode)?.status).toBe("pending")
   })
 })
 

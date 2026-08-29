@@ -9,6 +9,7 @@
  *                                     the pairing/revocation record
  *   POST /api/pair/revoke   (owner)   mark a paired app revoked
  *   GET  /api/pair/apps     (owner)   list paired devices, newest-first
+ *   GET  /api/pair/config   (public)  Turnstile discovery for the redeem client
  *
  * `/redeem` is public (the claim code IS the auth); `/issue` + `/revoke` are
  * owner-only — enforced centrally by `authMiddleware`'s app-role default-deny
@@ -33,12 +34,16 @@ import {
   normalizeClaimCode,
   nowSec,
   signAppToken,
+  verifyTurnstileToken,
 } from "../lib/pair-helpers.js"
 
 export const pairRoutes = new Hono<{ Bindings: Env }>()
 
 const redeemSchema = z.object({
   claimCode: z.string().min(1, "claimCode is required"),
+  // Present only when Turnstile enforcement is on (issue #23) — absence is
+  // rejected in the handler, not by zod, because enforcement depends on env.
+  turnstileToken: z.string().optional(),
 })
 
 const revokeSchema = z.object({
@@ -70,9 +75,57 @@ pairRoutes.post("/issue", async (c) => {
  * `created_at` cutoff baked into the WHERE clause (D1 has no TTL-on-entry;
  * expired rows are pruned lazily on mint). On success, sign an app JWT and
  * write the pairing/revocation record in KV with its D2 TTL-on-entry.
+ *
+ * The Turnstile gate (#23) runs BEFORE any D1 touch, so brute-force attempts
+ * never reach the claim store.
  */
 pairRoutes.post("/redeem", zValidator("json", redeemSchema), async (c) => {
-  const { claimCode: rawCode } = c.req.valid("json")
+  const { claimCode: rawCode, turnstileToken } = c.req.valid("json")
+
+  // Turnstile gate (#23): enforcement on only when BOTH keys are configured —
+  // zero-config deploys keep the bare claim-code flow, and one key alone is a
+  // misconfiguration treated as OFF (otherwise the app could fetch a
+  // `turnstileEnabled` config with no sitekey to render the widget from).
+  if (c.env.TURNSTILE_SITE_KEY && c.env.TURNSTILE_SECRET_KEY) {
+    if (!turnstileToken) {
+      return c.json(
+        {
+          success: false,
+          error: "Turnstile verification required",
+          errorCode: "TURNSTILE_REQUIRED",
+        },
+        400,
+      )
+    }
+    const verdict = await verifyTurnstileToken(
+      c.env.TURNSTILE_SECRET_KEY,
+      turnstileToken,
+    )
+    if (verdict === "unavailable") {
+      // Fail-closed: fail-open would disable the control precisely under the
+      // automated-guessing load it exists for. siteverify runs on CF's own
+      // edge — if it is down, pairing can wait a minute.
+      return c.json(
+        {
+          success: false,
+          error: "Turnstile verification unavailable",
+          errorCode: "TURNSTILE_UNAVAILABLE",
+        },
+        503,
+      )
+    }
+    if (verdict === "invalid") {
+      return c.json(
+        {
+          success: false,
+          error: "Turnstile verification failed",
+          errorCode: "TURNSTILE_INVALID",
+        },
+        403,
+      )
+    }
+  }
+
   const code = normalizeClaimCode(rawCode)
   await ensurePairClaimTable(c.env.DB)
 
@@ -152,6 +205,23 @@ pairRoutes.post("/redeem", zValidator("json", redeemSchema), async (c) => {
     pairingToken,
     appId,
     workerUrl: new URL(c.req.url).origin,
+  })
+})
+
+/**
+ * GET /api/pair/config (public — PUBLIC_PATHS)
+ *
+ * Pre-redeem discovery for the native client (issue #23): whether Turnstile is
+ * enforced on /redeem and the sitekey needed to render the widget. Exposes
+ * nothing secret — the sitekey is public by design (it ships in the widget
+ * HTML); the secret key never leaves the Worker.
+ */
+pairRoutes.get("/config", (c) => {
+  const enabled = Boolean(c.env.TURNSTILE_SITE_KEY && c.env.TURNSTILE_SECRET_KEY)
+  return c.json({
+    success: true,
+    turnstileEnabled: enabled,
+    sitekey: c.env.TURNSTILE_SITE_KEY ?? null,
   })
 })
 

@@ -33,6 +33,12 @@ export type Env = {
   // Cloudflare management (optional: for upgrade/uninstall from UI)
   GITHUB_TOKEN?: string
   APP_VERSION?: string
+  // Cloudflare Turnstile (optional: human check on public claim redeem, #23).
+  // Enforcement active only when BOTH are set; absent = zero-config redeem
+  // unchanged (keys are bound to a Cloudflare zone, so they cannot be
+  // auto-generated the way the JWT secret is).
+  TURNSTILE_SITE_KEY?: string
+  TURNSTILE_SECRET_KEY?: string
 }
 
 /**

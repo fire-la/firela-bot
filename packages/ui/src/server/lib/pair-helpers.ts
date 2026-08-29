@@ -1,8 +1,9 @@
 /**
  * Pairing Helpers
  *
- * Claim-code generation, the D1 claim store, and app-JWT signing for Plex-style
- * pairing (ADR-009). Claims are a single-use state machine (`pending -> used`,
+ * Claim-code generation, the D1 claim store, app-JWT signing, and Turnstile
+ * token verification for Plex-style pairing (ADR-009). Claims are a single-use
+ * state machine (`pending -> used`,
  * TTL-bounded) and live in D1: the atomic conditional UPDATE that single-use
  * requires has no KV equivalent (issue #24). JWT signing reuses the ADR-008
  * HS256 + KV-secret auth infrastructure — the same `ensureAuthSecret` +
@@ -139,4 +140,46 @@ export async function signAppToken(
     await ensureAuthSecret(env),
     "HS256",
   )
+}
+
+/** Cloudflare Turnstile server-side verification endpoint. */
+const TURNSTILE_SITEVERIFY_URL =
+  "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+const TURNSTILE_VERIFY_TIMEOUT_MS = 5000
+
+/**
+ * Outcome of a siteverify call. "unavailable" = network error, timeout, or
+ * non-200 HTTP (owner-side problem — surface as 503, not a client "invalid").
+ */
+export type TurnstileVerdict = "ok" | "invalid" | "unavailable"
+
+/**
+ * Verify a Turnstile widget token server-side (issue #23: brute-force pressure
+ * on the public redeem must not stay free once QR/links made codes
+ * machine-readable). Never throws — the tri-state verdict IS the error channel,
+ * which keeps the redeem handler a flat three-branch gate. `remoteip` is
+ * omitted: the Worker only sees CF edge IPs, so passing it risks false
+ * "invalid"s for a code that is already single-use + 10-min TTL.
+ */
+export async function verifyTurnstileToken(
+  secret: string,
+  token: string,
+): Promise<TurnstileVerdict> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), TURNSTILE_VERIFY_TIMEOUT_MS)
+  try {
+    const response = await fetch(TURNSTILE_SITEVERIFY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret, response: token }),
+      signal: controller.signal,
+    })
+    if (!response.ok) return "unavailable"
+    const data = (await response.json()) as { success?: boolean }
+    return data.success === true ? "ok" : "invalid"
+  } catch {
+    return "unavailable"
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }
