@@ -8,7 +8,7 @@ import { useEffect, useState } from "react"
 import { toast, Toaster } from "sonner"
 import { Settings, RefreshCw, AlertCircle, CheckCircle, Loader2, Radio, Database, Save, Eye, EyeOff, KeyRound, ArrowUpCircle, Trash2 } from "lucide-react"
 import { SERVICE_CONFIGS, type ServiceState, type ServiceId, type ServicesApiResponse } from "@/types/services"
-import { apiFetch } from "@/lib/auth"
+import { apiFetch, clearToken } from "@/lib/auth"
 import { useRelayStore } from "@/stores/relayStore"
 import { createAdapter } from "@/adapters"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -310,6 +310,7 @@ export function SettingsPage() {
         const succeeded = json.data!.results.filter((r) => r.success).length
         const total = json.data!.results.length
         setUninstallState((prev) => ({ ...prev, phase: "done", results: json.data!.results }))
+        clearToken()
         toast.success(`Uninstalled: ${succeeded}/${total} resources deleted`)
       } else {
         toast.error(json.error || "Uninstall failed")
@@ -317,6 +318,7 @@ export function SettingsPage() {
       }
     } catch {
       toast.error("Uninstall failed -- network error (Worker may have been deleted)")
+      clearToken()
       setUninstallState({ phase: "idle" })
     }
   }
