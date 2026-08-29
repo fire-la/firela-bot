@@ -5,7 +5,7 @@
  * Includes service toggle state management and route protection.
  */
 import { BrowserRouter, Routes, Route } from "react-router-dom"
-import { Link2, RefreshCw, Download, Cloud, Webhook, Settings, QrCode } from "lucide-react"
+import { Link2, RefreshCw, Download, Cloud, Webhook, Settings, QrCode, ArrowLeftRight } from "lucide-react"
 import { getLogo } from "@/helpers"
 import { ServiceStateProvider } from "@/contexts/ServiceStateContext"
 import { ThemeProvider } from "@/context/Theme"
@@ -18,6 +18,7 @@ import { VltPage } from "@/components/pages/VltPage"
 import { WebhooksPage } from "@/components/pages/WebhooksPage"
 import { SettingsPage } from "@/components/pages/SettingsPage"
 import { PairAppPage } from "@/components/pages/PairAppPage"
+import { AccountMappingPage } from "@/components/pages/AccountMappingPage"
 import { AuthSetupPage } from "@/components/pages/AuthSetupPage"
 import { PlaidConnectPage } from "@/components/pages/PlaidConnectPage"
 import { GmailConnectPage } from "@/components/pages/GmailConnectPage"
@@ -34,6 +35,7 @@ const billclawMenuItems = [
       { text: "Connect", itemKey: "connect", to: "/connect", icon: Link2 },
       { text: "Sync", itemKey: "sync", to: "/sync", icon: RefreshCw },
       { text: "Pair app", itemKey: "pair", to: "/pair", icon: QrCode },
+      { text: "Bank Mapping", itemKey: "bank-mapping", to: "/bank-mapping", icon: ArrowLeftRight },
     ],
   },
   {
@@ -53,7 +55,7 @@ const billclawMenuItems = [
 ]
 
 /** Nav item keys whose API calls 403 under an app token (dead-end affordances). */
-const OWNER_ONLY_NAV_KEYS = new Set(["connect", "export", "vlt", "webhooks", "settings", "pair"])
+const OWNER_ONLY_NAV_KEYS = new Set(["connect", "export", "vlt", "webhooks", "settings", "pair", "bank-mapping"])
 
 /**
  * Sidebar menu filtered by role. The `app` role (firela-app WebView) can only
@@ -105,6 +107,16 @@ export function App() {
               <ProtectedRoute serviceId="billclaw">
                 <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
                   <SyncPage />
+                </PageLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/bank-mapping"
+            element={
+              <ProtectedRoute serviceId="billclaw">
+                <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
+                  <AccountMappingPage />
                 </PageLayout>
               </ProtectedRoute>
             }
