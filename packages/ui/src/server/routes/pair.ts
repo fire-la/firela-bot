@@ -28,8 +28,9 @@ import {
   PAIR_CLAIM_TTL_SEC,
 } from "../constants.js"
 import {
-  generateClaimCode,
+  mintPendingClaim,
   normalizeClaimCode,
+  nowSec,
   signAppToken,
 } from "../lib/pair-helpers.js"
 
@@ -43,23 +44,13 @@ const revokeSchema = z.object({
   appId: z.string().min(1, "appId is required"),
 })
 
-function nowSec(): number {
-  return Math.floor(Date.now() / 1000)
-}
-
 /**
  * POST /api/pair/issue (owner)
  *
  * Mint a single-use claim code. Owner-only (not app-allowlisted).
  */
 pairRoutes.post("/issue", async (c) => {
-  const code = generateClaimCode()
-  const createdAt = nowSec()
-  await c.env.CONFIG.put(
-    PAIR_CLAIM_PREFIX + code,
-    JSON.stringify({ status: "pending", createdAt }),
-    { expirationTtl: PAIR_CLAIM_TTL_SEC },
-  )
+  const { code, createdAt } = await mintPendingClaim(c.env.CONFIG)
   return c.json({
     success: true,
     claimCode: code,

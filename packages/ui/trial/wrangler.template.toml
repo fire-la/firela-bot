@@ -22,7 +22,8 @@ binding = "ASSETS"
 # by assets directly. WARNING: with an array, NON-matching paths NEVER reach
 # the Worker (assets-only — no fallback to Worker), so this list must cover
 # every public mount. "/" is here for the first-run bootstrap surface
-# (issue #21, routes/bootstrap.ts); new top-level mounts MUST be added here.
+# (issue #21, routes/bootstrap.ts); new top-level mounts MUST be added here
+# AND in ../../wrangler.toml (kept in sync by hand — see ADR-009 D-C).
 run_worker_first = ["/", "/health", "/api/*", "/auth/*", "/webhook/*"]
 
 [[d1_databases]]

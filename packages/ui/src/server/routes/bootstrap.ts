@@ -31,19 +31,21 @@ import {
   PAIR_CLAIM_TTL_SEC,
   SETUP_PASSWORD_KEY,
 } from "../constants.js"
-import { generateClaimCode } from "../lib/pair-helpers.js"
+import { mintPendingClaim, nowSec } from "../lib/pair-helpers.js"
 
 export const bootstrapRoutes = new Hono<{ Bindings: Env }>()
-
-function nowSec(): number {
-  return Math.floor(Date.now() / 1000)
-}
 
 /**
  * Return the still-pending bootstrap claim, minting a new one only when the
  * current pointer is stale (claim used, expired, or pruned). Keeps KV writes
  * bounded (~1 mint per claim TTL per fresh deployment) and lets the user
  * refresh the page without invalidating the code they are typing.
+ *
+ * NOTE: read-then-write race — concurrent first requests can mint multiple
+ * pending claims. Accepted as the same class as the no-CAS redeem race
+ * (ADR-009 D2): every code is single-use, 600s-TTL, and GET / is public
+ * anyway (anyone can mint one for themselves), so the race grants no
+ * capability beyond the documented first-caller model.
  */
 async function currentOrNewClaim(
   kv: KVNamespace,
@@ -62,16 +64,10 @@ async function currentOrNewClaim(
     }
     // Pointer stale — fall through and mint a fresh code.
   }
-  const code = generateClaimCode()
-  const createdAt = nowSec()
-  // Same claim shape as /api/pair/issue (plus the origin marker) so redeem
-  // needs no changes. TTL re-passed on the pointer so it self-prunes with the
-  // claim instead of outliving the deployment's fresh window.
-  await kv.put(
-    PAIR_CLAIM_PREFIX + code,
-    JSON.stringify({ status: "pending", createdAt, origin: "bootstrap" }),
-    { expirationTtl: PAIR_CLAIM_TTL_SEC },
-  )
+  // Shared mint path with /api/pair/issue (lib/pair-helpers.ts); the
+  // `origin` marker distinguishes the bootstrap source. Pointer TTL matches
+  // the claim TTL so it self-prunes with it.
+  const { code, createdAt } = await mintPendingClaim(kv, { origin: "bootstrap" })
   await kv.put(PAIR_BOOTSTRAP_CURRENT_KEY, code, {
     expirationTtl: PAIR_CLAIM_TTL_SEC,
   })

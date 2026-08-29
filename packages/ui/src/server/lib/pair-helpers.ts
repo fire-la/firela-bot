@@ -11,11 +11,16 @@
 
 import { sign } from "hono/jwt"
 import { ensureAuthSecret } from "./auth-helpers.js"
-import { PAIR_TOKEN_TTL_SEC } from "../constants.js"
+import { PAIR_CLAIM_PREFIX, PAIR_CLAIM_TTL_SEC, PAIR_TOKEN_TTL_SEC } from "../constants.js"
 
 /** Crockford Base32 alphabet (excludes I/L/O/U to limit human-entry ambiguity). */
 const CLAIM_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 const CLAIM_CODE_LEN = 8
+
+/** Current unix time in seconds (shared timestamp convention for pair KV records). */
+export function nowSec(): number {
+  return Math.floor(Date.now() / 1000)
+}
 
 /**
  * Generate an 8-char Crockford Base32 claim code (~40 bits of entropy).
@@ -44,6 +49,26 @@ export function normalizeClaimCode(input: string): string {
     .toUpperCase()
     .replace(/O/g, "0")
     .replace(/[IL]/g, "1")
+}
+
+/**
+ * Mint a single-use pending claim — the ONE mint path shared by
+ * POST /api/pair/issue (owner dashboard) and the first-run bootstrap surface
+ * (issue #21), so the KV shape + TTL cannot drift between them. `extra`
+ * fields merge into the stored record (bootstrap passes `origin`).
+ */
+export async function mintPendingClaim(
+  kv: KVNamespace,
+  extra: Record<string, unknown> = {},
+): Promise<{ code: string; createdAt: number }> {
+  const code = generateClaimCode()
+  const createdAt = nowSec()
+  await kv.put(
+    PAIR_CLAIM_PREFIX + code,
+    JSON.stringify({ status: "pending", createdAt, ...extra }),
+    { expirationTtl: PAIR_CLAIM_TTL_SEC },
+  )
+  return { code, createdAt }
 }
 
 /**
