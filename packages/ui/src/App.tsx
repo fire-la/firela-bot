@@ -4,7 +4,7 @@
  * Router setup for OAuth and configuration pages.
  * Includes service toggle state management and route protection.
  */
-import { BrowserRouter, Routes, Route } from "react-router-dom"
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom"
 import { Link2, RefreshCw, Download, Cloud, Webhook, Settings, QrCode, ArrowLeftRight } from "lucide-react"
 import { getLogo } from "@/helpers"
 import { ServiceStateProvider } from "@/contexts/ServiceStateContext"
@@ -18,6 +18,8 @@ import { VltPage } from "@/components/pages/VltPage"
 import { WebhooksPage } from "@/components/pages/WebhooksPage"
 import { SettingsPage } from "@/components/pages/SettingsPage"
 import { PairAppPage } from "@/components/pages/PairAppPage"
+import { PairLandingPage } from "@/components/pages/PairLandingPage"
+import { parsePairingHash } from "@/lib/pairing"
 import { AccountMappingPage } from "@/components/pages/AccountMappingPage"
 import { AuthSetupPage } from "@/components/pages/AuthSetupPage"
 import { PlaidConnectPage } from "@/components/pages/PlaidConnectPage"
@@ -163,13 +165,7 @@ export function App() {
           />
           <Route
             path="/pair"
-            element={
-              <ProtectedRoute serviceId="billclaw">
-                <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
-                  <PairAppPage />
-                </PageLayout>
-              </ProtectedRoute>
-            }
+            element={<PairRoute />}
           />
 
           {/* Auth routes - full page, no layout */}
@@ -184,6 +180,23 @@ export function App() {
         </ServiceStateProvider>
       </ThemeProvider>
     </BrowserRouter>
+  )
+}
+
+// /pair entry: a valid #code=<8-char> fragment renders the public pairing
+// landing (issue #34 — link taps in a phone browser must not hit the owner
+// login gate, which rewrites the URL and drops the fragment); everything
+// else falls through to the owner-gated Pair page unchanged.
+function PairRoute() {
+  const menuItems = menuItemsForRole()
+  const code = parsePairingHash(useLocation().hash)
+  if (code) return <PairLandingPage code={code} />
+  return (
+    <ProtectedRoute serviceId="billclaw">
+      <PageLayout menuItems={menuItems} systemName="connect" logo={getLogo()}>
+        <PairAppPage />
+      </PageLayout>
+    </ProtectedRoute>
   )
 }
 

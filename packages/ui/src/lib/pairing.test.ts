@@ -4,7 +4,12 @@
  * and "paste pairing link" parser — change them only in lockstep.
  */
 import { describe, it, expect } from "vitest"
-import { buildPairingUrl, groupClaimCode, formatCountdown } from "./pairing.js"
+import {
+  buildPairingUrl,
+  groupClaimCode,
+  formatCountdown,
+  parsePairingHash,
+} from "./pairing.js"
 
 describe("buildPairingUrl (cross-repo contract)", () => {
   it("builds {origin}/pair#code={rawCode} with the code in the fragment", () => {
@@ -33,6 +38,29 @@ describe("groupClaimCode", () => {
 
   it("passes through codes that are not 8 chars", () => {
     expect(groupClaimCode("ABC")).toBe("ABC")
+  })
+})
+
+describe("parsePairingHash", () => {
+  it("extracts a valid 8-char Crockford code from #code=", () => {
+    expect(parsePairingHash("#code=7Q3KD9XR")).toBe("7Q3KD9XR")
+  })
+
+  it("rejects lowercase, wrong length, and non-Crockford characters", () => {
+    expect(parsePairingHash("#code=7q3kd9xr")).toBeNull() // lowercase
+    expect(parsePairingHash("#code=7Q3KD9X")).toBeNull() // 7 chars
+    expect(parsePairingHash("#code=7Q3KD9XRZ")).toBeNull() // 9 chars
+    expect(parsePairingHash("#code=7Q3KI9XR")).toBeNull() // I excluded
+    expect(parsePairingHash("#code=7Q3KL9XR")).toBeNull() // L excluded
+    expect(parsePairingHash("#code=7Q3KO9XR")).toBeNull() // O excluded
+    expect(parsePairingHash("#code=7Q3KU9XR")).toBeNull() // U excluded
+  })
+
+  it("rejects extra params, other keys, empty and malformed hashes", () => {
+    expect(parsePairingHash("#code=7Q3KD9XR&t=123")).toBeNull()
+    expect(parsePairingHash("#other=7Q3KD9XR")).toBeNull()
+    expect(parsePairingHash("")).toBeNull()
+    expect(parsePairingHash("code=7Q3KD9XR")).toBeNull() // missing '#'
   })
 })
 

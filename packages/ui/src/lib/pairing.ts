@@ -39,6 +39,19 @@ export function groupClaimCode(code: string): string {
   return code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code
 }
 
+/**
+ * Extract a valid 8-char Crockford claim code from a URL fragment like
+ * `#code=7Q3KD9XR` (the shape emitted by buildPairingUrl). Strict on
+ * purpose — anything malformed (wrong length, lowercase, non-Crockford
+ * characters, extra params, empty) returns null, so the /pair route falls
+ * through to the normal owner-gated Pair page instead of rendering
+ * attacker-controlled content as a "pairing" landing (issue #34).
+ */
+export function parsePairingHash(hash: string): string | null {
+  const m = /^#code=([0-9A-HJKMNP-TV-Z]{8})$/.exec(hash)
+  return m ? m[1] : null
+}
+
 /** Format a remaining-time in ms as `mm:ss`, clamping negatives to zero. */
 export function formatCountdown(remainingMs: number): string {
   const totalSec = Math.max(0, Math.floor(remainingMs / 1000))
