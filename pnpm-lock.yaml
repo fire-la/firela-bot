@@ -79,8 +79,8 @@ importers:
   packages/billclaw/core:
     dependencies:
       '@firela/api-types':
-        specifier: 0.0.0-canary.69a6df79
-        version: 0.0.0-canary.69a6df79
+        specifier: 0.0.0-canary.e6edf4ac
+        version: 0.0.0-canary.e6edf4ac
       '@firela/parser-cn':
         specifier: ^0.1.2
         version: 0.1.2(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)
@@ -111,6 +111,10 @@ importers:
       zod:
         specifier: ^3.25.0
         version: 3.25.76
+    optionalDependencies:
+      keytar:
+        specifier: ^6.0.1
+        version: 6.0.1
     devDependencies:
       '@firela/runtime-adapters':
         specifier: workspace:*
@@ -139,10 +143,6 @@ importers:
       vitest:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@25.2.1)(@vitest/ui@3.2.4)(happy-dom@17.6.3)(jiti@1.21.7)(jsdom@26.1.0)
-    optionalDependencies:
-      keytar:
-        specifier: ^6.0.1
-        version: 6.0.1
 
   packages/runtime-adapters:
     devDependencies:
@@ -168,8 +168,8 @@ importers:
   packages/ui:
     dependencies:
       '@firela/api-types':
-        specifier: 0.0.0-canary.69a6df79
-        version: 0.0.0-canary.69a6df79
+        specifier: 0.0.0-canary.e6edf4ac
+        version: 0.0.0-canary.e6edf4ac
       '@firela/billclaw-core':
         specifier: workspace:*
         version: link:../billclaw/core
@@ -1008,8 +1008,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@firela/api-types@0.0.0-canary.69a6df79':
-    resolution: {integrity: sha512-VWNsnJU6gsC1afRUp+OxPD4zpNlFyNxXXpCcZcBiJXv/L9s9geWitA2zSxrlrkm4EpXJq+PA2VlcOnqodyoUdA==}
+  '@firela/api-types@0.0.0-canary.e6edf4ac':
+    resolution: {integrity: sha512-t00hw9ZPkQDaEJjABRsEvWD8s4y5YO8ofHi8KwaqfA7VS2EwP/laFo9871RAw5K36pZ0HqjZ9RNSBuGq0IhE9A==}
 
   '@firela/parser-cn@0.1.2':
     resolution: {integrity: sha512-yfKpyQlyuBA5roFpqn+vbpjoWS02JbdQeQR1jSU8857M1TyDnCKpstjybhXZuql7giFk/eXHWb2n801Tdxp1Aw==}
@@ -5093,7 +5093,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@firela/api-types@0.0.0-canary.69a6df79': {}
+  '@firela/api-types@0.0.0-canary.e6edf4ac': {}
 
   '@firela/parser-cn@0.1.2(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)':
     dependencies:
