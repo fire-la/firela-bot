@@ -1,6 +1,6 @@
 {
   "name": "@firela/billclaw-ui",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "description": "Unified UI package for BillClaw - React + Vite + Tailwind",
   "type": "module",
