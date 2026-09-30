@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.7
+
+### Patch Changes
+
+- Updated dependencies [756205c]
+  - @firela/billclaw-core@0.5.7
+
 ## 0.5.6
 
 ### Patch Changes

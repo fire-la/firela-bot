@@ -1,5 +1,12 @@
 # @firela/billclaw-ui
 
+## 0.0.4
+
+### Patch Changes
+
+- Updated dependencies [756205c]
+  - @firela/billclaw-core@0.5.7
+
 ## 0.0.3
 
 ### Patch Changes
