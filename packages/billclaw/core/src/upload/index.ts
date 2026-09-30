@@ -15,6 +15,7 @@
 export {
   VltClient,
   uploadTransactions,
+  checkUploadResult,
   type VltClientConfig,
   type PlaidTransactionUpload,
   type ProviderSyncConfig,

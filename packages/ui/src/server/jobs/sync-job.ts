@@ -14,14 +14,17 @@
 
 import {
   uploadTransactions,
+  checkUploadResult,
   type VltClientConfig,
   type ProviderSyncConfig,
+  type VltUploadResult,
   type VltRegion,
 } from "@firela/billclaw-core"
 
 import type { Env } from "../index.js"
 import { isPlaidItemDue } from "../lib/plaid-item.js"
 import { getPlaidRelayClient } from "../lib/plaid-relay.js"
+import { serverCache, CacheKeys } from "../lib/server-cache.js"
 import { getVltJwt } from "../lib/vlt-auth.js"
 import { toPlaidUpload, type RawPlaidTransaction } from "./plaid-upload-converter.js"
 
@@ -72,10 +75,14 @@ interface SyncAccount {
   status?: string
   lastSync?: string
   lastStatus?: string
+  /** Counts of the last upload (vlt vocabulary, mirrors core's VltUploadStatus). */
+  lastUploadResult?: VltUploadResult
+  /** Error message of the last sync run (cleared on the next ok run). */
+  errorMessage?: string
 }
 
 type AccountSyncOutcome =
-  | { id: string; status: "ok" }
+  | { id: string; status: "ok"; lastUploadResult?: VltUploadResult }
   | { id: string; status: "error"; error: string }
   | { id: string; status: "skipped" }
 
@@ -110,11 +117,28 @@ export async function runSyncJob(env: Env): Promise<void> {
     return
   }
 
-  const jwt = await getVltJwt(env, {
-    apiUrl: vlt.apiUrl,
-    accessToken: vlt.accessToken,
-    region: (vlt.region ?? "us") as VltRegion,
-  })
+  let jwt: string
+  let client: Awaited<ReturnType<typeof getPlaidRelayClient>>
+  try {
+    jwt = await getVltJwt(env, {
+      apiUrl: vlt.apiUrl,
+      accessToken: vlt.accessToken,
+      region: (vlt.region ?? "us") as VltRegion,
+    })
+    client = await getPlaidRelayClient(env)
+  } catch (err) {
+    // Job-level abort BEFORE any per-account work (bad mint URL, missing relay
+    // key, ...): mark every due account errored via the standard merge so
+    // /api/sync/status flips to "error" instead of idling as if all was well
+    // (#37 — this class is what made the region-scoped mint crash invisible).
+    const error = err instanceof Error ? err.message : String(err)
+    console.error(`[sync-job] aborted before per-account sync: ${error}`)
+    await mergeOutcomesIntoAccounts(
+      env,
+      due.map((account): AccountSyncOutcome => ({ id: account.id, status: "error", error })),
+    )
+    return
+  }
 
   const vltConfig: VltClientConfig = {
     apiUrl: vlt.apiUrl,
@@ -129,8 +153,6 @@ export async function runSyncJob(env: Env): Promise<void> {
     defaultIncomeAccount: upload.defaultIncomeAccount ?? "Income:Unknown",
     filterPending: upload.filterPending ?? true,
   }
-
-  const client = await getPlaidRelayClient(env)
 
   const outcomes = await Promise.all(
     due.map((account) =>
@@ -196,16 +218,25 @@ async function syncOneAccount(
     // Skip the VLT round-trip when there is nothing to upload (steady-state).
     // When there IS data, uploadTransactions throwing aborts before the cursor
     // put below — so the cursor advances only on success (or a no-op).
+    // A 200 with failed>0 or all-zero counts is a silent zero-transfer: throw
+    // for the same reason, BEFORE the cursor put, so the ADR-009 invariant
+    // ("cursor advances only on successful upload") holds for it too (#37).
+    let uploadResult: VltUploadResult | undefined
     if (uploadTxns.length > 0) {
-      await uploadTransactions(vltConfig, uploadTxns, providerSyncConfig, console)
+      uploadResult = await uploadTransactions(vltConfig, uploadTxns, providerSyncConfig, console)
+      const problem = checkUploadResult(uploadTxns.length, uploadResult)
+      if (problem) throw new Error(problem)
     }
 
     await env.CONFIG.put(cursorKey(account.id), nextCursor)
 
     console.log(
-      `[sync-job] ${account.id}: uploaded ${uploadTxns.length} txn(s), cursor=${nextCursor}`,
+      `[sync-job] ${account.id}: uploaded ${uploadTxns.length} txn(s), cursor=${nextCursor}` +
+        (uploadResult
+          ? `, imported=${uploadResult.imported} skipped=${uploadResult.skipped} pendingReview=${uploadResult.pendingReview} failed=${uploadResult.failed}`
+          : ""),
     )
-    return { id: account.id, status: "ok" }
+    return { id: account.id, status: "ok", lastUploadResult: uploadResult }
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
     console.error(`[sync-job] ${account.id}: ${error}`)
@@ -237,10 +268,20 @@ async function mergeOutcomesIntoAccounts(
       ...accounts[idx],
       lastSync: stamp,
       lastStatus: outcome.status === "ok" ? "ok" : "error",
+      // undefined values are dropped by JSON.stringify — an ok run clears a
+      // stale errorMessage; an error run keeps the last successful counts.
+      errorMessage: outcome.status === "error" ? outcome.error : undefined,
+      lastUploadResult:
+        outcome.status === "ok"
+          ? (outcome.lastUploadResult ?? accounts[idx].lastUploadResult)
+          : accounts[idx].lastUploadResult,
     }
   }
 
   await env.CONFIG.put(ACCOUNTS_KEY, JSON.stringify(accounts))
+  // /api/accounts reads through a 30s per-isolate cache — drop it so the new
+  // outcome fields are visible immediately (same pattern as routes/accounts.ts).
+  serverCache.delete(CacheKeys.accounts)
 }
 
 // ---------------------------------------------------------------------------

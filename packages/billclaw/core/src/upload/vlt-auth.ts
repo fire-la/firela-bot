@@ -215,7 +215,9 @@ export class VltAuthManager {
       )
     }
 
-    const url = `${this.vltConfig.apiUrl}/${this.vltConfig.region}/auth/sessions/anonymous`
+    // Auth endpoints are region-less in vlt (auth.controller: 'auth/sessions');
+    // a region-prefixed mint 404s (fire-la/firela-bot#37).
+    const url = `${this.vltConfig.apiUrl.replace(/\/+$/, "")}/auth/sessions/anonymous`
 
     this.logger?.debug?.(`Exchanging VLT accessToken for JWT at ${url}`)
 

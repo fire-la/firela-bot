@@ -101,6 +101,29 @@ export interface VltUploadResult {
 }
 
 /**
+ * Detect a swallowed zero-transfer: the upload HTTP-succeeded but VLT reported
+ * failures, or nothing landed despite transactions being sent
+ * (fire-la/firela-bot#37 — such results must surface as errors, not success).
+ *
+ * @param sent - Number of transactions handed to {@link VltClient.sync}
+ * @param result - Upload result returned by VLT
+ * @returns Error message when the result should be treated as a failure, null when healthy
+ */
+export function checkUploadResult(
+  sent: number,
+  result: VltUploadResult,
+): string | null {
+  if (result.failed > 0) {
+    return `VLT upload reported ${result.failed} failed transaction(s)`
+  }
+  const landed = result.imported + result.skipped + result.pendingReview
+  if (sent > 0 && landed === 0) {
+    return `VLT upload landed nothing: ${sent} sent, imported=${result.imported} skipped=${result.skipped} pendingReview=${result.pendingReview}`
+  }
+  return null
+}
+
+/**
  * VLT API response for supported providers
  */
 interface SupportedProvidersResponse {
@@ -183,6 +206,10 @@ export class VltClient {
       method: "POST",
       body: JSON.stringify(requestBody),
     })
+
+    // requestWithRetry returns non-retryable 4xx instead of throwing — assert
+    // before parsing or an error body would be cast to a success DTO (#37).
+    await this.assertOk(response, "provider sync upload")
 
     const result = (await response.json()) as VltUploadResult
 

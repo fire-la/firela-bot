@@ -20,7 +20,11 @@ vi.mock("../lib/plaid-relay.js", () => ({
   ),
 }))
 vi.mock("../lib/vlt-auth.js", () => ({ getVltJwt: mocks.getVltJwt }))
-vi.mock("@firela/billclaw-core", () => ({ uploadTransactions: mocks.uploadTransactions }))
+// Keep the real module (checkUploadResult and friends) — only stub the network call.
+vi.mock("@firela/billclaw-core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@firela/billclaw-core")>()),
+  uploadTransactions: mocks.uploadTransactions,
+}))
 
 // Real converter (pure) — exercise the actual mapping.
 import { runSyncJob } from "./sync-job.js"
@@ -100,8 +104,10 @@ describe("runSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetVltJwt.mockResolvedValue("vlt-jwt")
+    // Healthy default: everything sent landed (import). All-zero counts are now
+    // a silent zero-transfer error (#37), so tests must opt into that explicitly.
     mockUploadTransactions.mockResolvedValue({
-      imported: 0,
+      imported: 1,
       skipped: 0,
       pendingReview: 0,
       failed: 0,
@@ -249,5 +255,53 @@ describe("runSyncJob", () => {
     expect(kv._raw("billclaw:cursor:a")).toBe("c-empty")
     const accounts = JSON.parse(kv._raw("billclaw:accounts")!) as Array<{ lastStatus: string }>
     expect(accounts[0]!.lastStatus).toBe("ok")
+  })
+
+  it("silent zero-transfer (200 but nothing landed): error outcome, cursor NOT advanced (#37)", async () => {
+    mockSyncTransactions.mockResolvedValue({
+      added: [{ transaction_id: "t1", amount: 1, date: "2026-09-30", name: "x" }],
+      modified: [],
+      removed: [],
+      next_cursor: "c-zero",
+      has_more: false,
+    })
+    mockUploadTransactions.mockResolvedValueOnce({
+      imported: 0,
+      skipped: 0,
+      pendingReview: 0,
+      failed: 0,
+    })
+    const kv = makeKv({
+      "billclaw:config": VLT_CONFIG,
+      "billclaw:accounts": [plaidAccount("a")],
+    })
+    await runSyncJob(envWith(kv))
+
+    expect(kv._raw("billclaw:cursor:a")).toBeNull()
+    const accounts = JSON.parse(kv._raw("billclaw:accounts")!) as Array<{
+      lastStatus: string
+      errorMessage?: string
+    }>
+    expect(accounts[0]!.lastStatus).toBe("error")
+    expect(accounts[0]!.errorMessage).toMatch(/nothing/)
+  })
+
+  it("pre-account abort (JWT mint fails): every due account marked error, no relay calls (#37)", async () => {
+    mockGetVltJwt.mockRejectedValueOnce(new Error("VLT auth exchange failed (404)"))
+    const kv = makeKv({
+      "billclaw:config": VLT_CONFIG,
+      "billclaw:accounts": [plaidAccount("a"), plaidAccount("b")],
+    })
+    await runSyncJob(envWith(kv))
+
+    expect(mockSyncTransactions).not.toHaveBeenCalled()
+    expect(mockUploadTransactions).not.toHaveBeenCalled()
+    const accounts = JSON.parse(kv._raw("billclaw:accounts")!) as Array<{
+      id: string
+      lastStatus: string
+      errorMessage?: string
+    }>
+    expect(accounts.every((a) => a.lastStatus === "error")).toBe(true)
+    expect(accounts.every((a) => a.errorMessage === "VLT auth exchange failed (404)")).toBe(true)
   })
 })

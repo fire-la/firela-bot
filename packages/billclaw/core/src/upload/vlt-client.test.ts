@@ -3,7 +3,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { VltClient, uploadTransactions } from "./vlt-client.js"
+import {
+  VltClient,
+  uploadTransactions,
+  checkUploadResult,
+} from "./vlt-client.js"
 import type { Logger } from "../errors/errors.js"
 
 // Mock fetch globally
@@ -147,6 +151,35 @@ describe("VltClient", () => {
         body: expect.stringContaining("config"),
       }),
     )
+  })
+
+  it("should reject on a non-2xx upload response instead of parsing the error body (#37)", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      text: async () => '{"error":"invalid token"}',
+    })
+
+    await expect(
+      client.sync(
+        [
+          {
+            transaction_id: "txn-1",
+            amount: 1,
+            iso_currency_code: "USD",
+            date: "2024-01-01",
+            name: "T",
+            pending: false,
+            account_id: "acc-1",
+          },
+        ],
+        {
+          sourceAccount: "Assets:Bank",
+          defaultCurrency: "USD",
+        },
+      ),
+    ).rejects.toThrow(/401/)
   })
 
   it("should forward externalAccountId to config when provided (ADR-0113 #17)", async () => {
@@ -399,5 +432,42 @@ describe("uploadTransactions", () => {
     )
 
     expect(result.imported).toBe(3)
+  })
+})
+
+describe("checkUploadResult", () => {
+  it("is healthy when transactions landed anywhere (import/skip/review)", () => {
+    expect(
+      checkUploadResult(2, { imported: 0, skipped: 0, pendingReview: 2, failed: 0 }),
+    ).toBeNull()
+    expect(
+      checkUploadResult(2, { imported: 1, skipped: 1, pendingReview: 0, failed: 0 }),
+    ).toBeNull()
+  })
+
+  it("is healthy on a true steady-state no-op (nothing sent)", () => {
+    expect(
+      checkUploadResult(0, { imported: 0, skipped: 0, pendingReview: 0, failed: 0 }),
+    ).toBeNull()
+  })
+
+  it("flags reported failures", () => {
+    const problem = checkUploadResult(2, {
+      imported: 1,
+      skipped: 0,
+      pendingReview: 0,
+      failed: 1,
+    })
+    expect(problem).toMatch(/1 failed/)
+  })
+
+  it("flags a silent zero-transfer: sent > 0 but nothing landed (#37)", () => {
+    const problem = checkUploadResult(3, {
+      imported: 0,
+      skipped: 0,
+      pendingReview: 0,
+      failed: 0,
+    })
+    expect(problem).toMatch(/3 sent/)
   })
 })

@@ -87,8 +87,9 @@ describe("getVltJwt", () => {
     )
 
     expect(token).toBe("fresh-jwt")
+    // Auth endpoints are region-less in vlt — the region-prefixed form 404s (#37).
     expect(fetchSpy).toHaveBeenCalledWith(
-      "https://vlt.test/api/v1/us/auth/sessions/anonymous",
+      "https://vlt.test/api/v1/auth/sessions/anonymous",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ accessToken: "long-lived" }),

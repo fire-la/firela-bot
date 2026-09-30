@@ -49,7 +49,9 @@ export async function getVltJwt(
     }
   }
 
-  const url = `${vlt.apiUrl.replace(/\/+$/, "")}/${vlt.region}/auth/sessions/anonymous`
+  // Auth endpoints are region-less in vlt (auth.controller: 'auth/sessions');
+  // only bean routes are region-scoped. A region-prefixed mint 404s (fire-la/firela-bot#37).
+  const url = `${vlt.apiUrl.replace(/\/+$/, "")}/auth/sessions/anonymous`
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
