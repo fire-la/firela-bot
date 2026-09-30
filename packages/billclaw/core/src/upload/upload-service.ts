@@ -20,7 +20,7 @@ import type { VltConfig, StorageConfig } from "../models/config.js"
 import type { Transaction } from "../storage/transaction-storage.js"
 import type { VltUploadResult, ProviderSyncConfig } from "./vlt-client.js"
 import { VltAuthManager } from "./vlt-auth.js"
-import { uploadTransactions } from "./vlt-client.js"
+import { uploadTransactions, checkUploadResult } from "./vlt-client.js"
 import { transformTransactionsToPlaidFormat } from "./transform.js"
 import { UploadStatusStore, type VltUploadStatus } from "./upload-status.js"
 import { parseVltError, createUserError, ERROR_CODES, ErrorCategory } from "../errors/errors.js"
@@ -274,6 +274,12 @@ export class UploadService {
         syncConfig,
         this.logger,
       )
+
+      // A 200 with failed>0 or nothing landed is a swallowed zero-transfer -
+      // throw so the catch below records failed status (same semantics as the
+      // Worker sync job, ADR-009 D5 surfaces stay aligned; fire-la/firela-bot#38).
+      const problem = checkUploadResult(plaidTransactions.length, result)
+      if (problem) throw new Error(problem)
 
       // 7. Store success status
       const status: VltUploadStatus = {

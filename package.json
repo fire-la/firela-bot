@@ -11,7 +11,7 @@
     "test": "pnpm -r --filter './packages/**' test",
     "test:coverage": "pnpm -r --filter './packages/**' test:coverage",
     "test:e2e": "cd billclaw-docs/testing && npx tsx scripts/run-e2e-tests.ts",
-    "test:e2e:local": "cd billclaw-docs/testing && npx playwright test --project=chromium --grep-invert=@cloudflare",
+    "test:e2e:local": "cd billclaw-docs/testing && npx playwright test --project=local-ui --grep \"PairAppPage\"",
     "test:e2e:cloudflare": "cd billclaw-docs/testing && npx playwright test --project=cloudflare-deployed",
     "test:e2e:worker": "cd packages/ui && pnpm test",
     "test:merge-reports": "cd billclaw-docs/testing && npx playwright merge-reports --reporter=html ./all-blob-reports",

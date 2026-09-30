@@ -25,7 +25,7 @@ jobs:
       - name: Get version from package.json
         id: get-version
         run: |
-          VERSION=$(node -p "require('./packages/core/package.json').version")
+          VERSION=$(node -p "require('./packages/billclaw/core/package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Validate skill

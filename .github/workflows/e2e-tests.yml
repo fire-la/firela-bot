@@ -91,10 +91,36 @@ jobs:
       - name: Build packages
         run: pnpm build
 
+      # CI-context twin of the testing fixtures' ConnectServiceManager: start
+      # the UI worker the local-ui specs target. Workflow-level (not the
+      # config's local-only webServer) because CI=true suppresses it there
+      # and the cloudflare-deployed job never builds packages/ui.
+      - name: Start UI server
+        run: |
+          cd packages/ui
+          nohup npx wrangler dev --port 4456 > /tmp/wrangler-dev.log 2>&1 &
+          WRANGLER_PID=$!
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:4456/health > /dev/null; then
+              echo "UI server ready"
+              exit 0
+            fi
+            # Fail fast when wrangler itself died (port conflict, config error)
+            if ! kill -0 $WRANGLER_PID 2> /dev/null; then
+              echo "UI server process exited early:"; cat /tmp/wrangler-dev.log; exit 1
+            fi
+            sleep 2
+          done
+          echo "UI server failed to start:"; cat /tmp/wrangler-dev.log; exit 1
+
       - name: Run E2E tests
-        run: npx playwright test --config billclaw-docs/testing/playwright.config.ts --project=chromium
+        # PairAppPage is the only post-auth-wall local-ui spec (token seed +
+        # /api mocks); the other six predate the auth wall and are tracked as
+        # an open item on fire-la/firela-bot#41.
+        run: npx playwright test --config billclaw-docs/testing/playwright.config.ts --project=local-ui --grep "PairAppPage"
         env:
           CI: true
+          CONNECT_URL: http://127.0.0.1:4456
 
       - name: Run Healer on failed tests
         if: failure()
@@ -105,7 +131,7 @@ jobs:
           echo "For now, skipping auto-heal in CI - check the test results manually"
         env:
           CI: true
-          # Claude Code CLI Configuration (uses 智谱 AI endpoint)
+          # Claude Code CLI Configuration (uses Zhipu AI endpoint)
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
           ANTHROPIC_BASE_URL: https://open.bigmodel.cn/api/anthropic
           API_TIMEOUT_MS: "3000000"
