@@ -6,24 +6,35 @@ on:
       - "v*.*.*"
   workflow_dispatch:
 
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
+      contents: read
       id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Node 24 ships npm 11 (>= 11.5.1 required for npm trusted publishing /
+      # OIDC auth). No NPM_TOKEN and no registry input (npm defaults to
+      # registry.npmjs.org; the registry input would write a stale
+      # _authToken=${NODE_AUTH_TOKEN} line into ~/.npmrc).
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          registry: "https://registry.npmjs.org"
+          node-version: "24"
 
+      # Pinned to a commit SHA: mutable tag hijack on a supply-chain-critical
+      # workflow is the AsyncAPI-style OIDC attack vector.
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@53751a9789c7351e4924f01fe68370252a4f1f18 # v2.4.1
         with:
           version: 9
 
@@ -47,6 +58,11 @@ jobs:
       - name: Build all packages
         run: pnpm -r build
 
+      # Single npm publishing face (version.yml no longer publishes; a tag is
+      # the release moment). pnpm only PACKS (workspace: protocol resolution);
+      # the actual registry publish goes through the npm CLI, whose OIDC
+      # trusted-publishing support is reliable (pnpm publish + OIDC is not -
+      # pnpm/pnpm#9812).
       - name: Publish packages
         run: |
           for package in packages/runtime-adapters packages/billclaw/core packages/billclaw/cli; do
@@ -54,6 +70,8 @@ jobs:
               cd "$package"
               PACKAGE_NAME=$(node -p "require('./package.json').name")
               PACKAGE_VERSION=$(node -p "require('./package.json').version")
+              PACK_DIR="$RUNNER_TEMP/packs/$package"
+              mkdir -p "$PACK_DIR"
 
               # Check if package version is already published
               echo "Checking if $PACKAGE_NAME@$PACKAGE_VERSION is already published..."
@@ -61,11 +79,9 @@ jobs:
                 echo "✓ $PACKAGE_NAME@$PACKAGE_VERSION is already published, skipping..."
               else
                 echo "Publishing $PACKAGE_NAME@$PACKAGE_VERSION..."
-                pnpm publish --access public --no-git-checks
+                pnpm pack --pack-destination "$PACK_DIR"
+                npm publish "$PACK_DIR"/*.tgz --access public
               fi
               cd ../..
             fi
           done
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
