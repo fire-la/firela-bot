@@ -218,6 +218,12 @@ export const VltUploadConfigSchema = z.object({
   defaultExpenseAccount: z.string().default("Expenses:Unknown"),
   defaultIncomeAccount: z.string().default("Income:Unknown"),
   filterPending: z.boolean().default(true),
+  /**
+   * Skip the payee-match stage on upload (vlt #1518). Opt-in with NO
+   * default: absent = the field is not sent on the wire and vlt keeps its
+   * default payee-matching behavior.
+   */
+  skipPayeeMatch: z.boolean().optional(),
 })
 export type VltUploadConfig = z.infer<typeof VltUploadConfigSchema>
 

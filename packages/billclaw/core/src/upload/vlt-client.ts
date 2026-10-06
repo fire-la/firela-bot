@@ -80,6 +80,15 @@ export interface ProviderSyncConfig {
    * per-batch providers and is not consumed on the current path.
    */
   externalAccountId?: string
+  /**
+   * Skip the payee-match stage for this sync (vlt #1518/#1520).
+   *
+   * Mirrors vlt's ProviderSyncConfig.skipPayeeMatch — the 7th field of the
+   * BILLCLAW_EXPECTED_FIELDS mirror. Opt-in: sent on the wire ONLY when
+   * explicitly enabled; absent = vlt keeps its default payee-matching
+   * behavior.
+   */
+  skipPayeeMatch?: boolean
 }
 
 /**
@@ -193,6 +202,11 @@ export class VltClient {
         // billclaw currently uploads per-tx, so this is usually absent.
         ...(syncConfig.externalAccountId
           ? { externalAccountId: syncConfig.externalAccountId }
+          : {}),
+        // Opt-in field (vlt #1518): carried only when explicitly enabled —
+        // an absent/false value keeps vlt's default payee-matching behavior.
+        ...(syncConfig.skipPayeeMatch === true
+          ? { skipPayeeMatch: true }
           : {}),
       },
       transactions,

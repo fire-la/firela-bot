@@ -16,6 +16,47 @@ import {
   CredentialStrategy,
   type CredentialStore,
 } from "../credentials/store.js"
+import { getStorageDir } from "../storage/transaction-storage.js"
+import { uploadTransactions } from "./vlt-client.js"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+
+// Passthrough-test seams (vlt #1518): the sync flow's side effects are
+// mocked at the module boundary so the test can observe the ProviderSyncConfig
+// the service builds from VltUploadConfig.
+vi.mock("../storage/transaction-storage.js", () => ({
+  getStorageDir: vi.fn(),
+}))
+vi.mock("./transform.js", () => ({
+  transformTransactionsToPlaidFormat: vi.fn(() => [
+    {
+      transaction_id: "txn-1",
+      amount: 1,
+      iso_currency_code: "USD",
+      date: "2024-01-15",
+      name: "T",
+      pending: false,
+      account_id: "acc-1",
+    },
+  ]),
+}))
+vi.mock("./vlt-auth.js", () => ({
+  VltAuthManager: class {
+    ensureValidToken = vi.fn().mockResolvedValue("jwt-test")
+    startBackgroundRefresh() {}
+    stopBackgroundRefresh() {}
+  },
+}))
+vi.mock("./vlt-client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./vlt-client.js")>()
+  return {
+    ...actual,
+    uploadTransactions: vi
+      .fn()
+      .mockResolvedValue({ imported: 1, skipped: 0, pendingReview: 0, failed: 0 }),
+  }
+})
 
 // Mock fetch globally
 const mockFetch = vi.fn()
@@ -172,6 +213,59 @@ describe("UploadService", () => {
       expect(error.type).toBe("UserError")
       expect(error.humanReadable.title).toBe("Firela VLT Upload Not Configured")
       expect(error.humanReadable.message).toContain("upload configuration is missing")
+    })
+  })
+
+  describe("skipPayeeMatch passthrough (vlt #1518)", () => {
+    it("forwards the opt-in flag into the ProviderSyncConfig", async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "billclaw-passthrough-"))
+      await vi.mocked(getStorageDir).mockResolvedValue(tmp)
+      // Real storage layout: transactions/<accountId>/<year>/<month>.json.
+      await fs.mkdir(path.join(tmp, "transactions", "acc-1", "2024"), {
+        recursive: true,
+      })
+      await fs.writeFile(
+        path.join(tmp, "transactions", "acc-1", "2024", "01.json"),
+        JSON.stringify([{ date: "2024-01-15", amount: 1 }]),
+        "utf-8",
+      )
+
+      const enabled: VltConfig = {
+        ...vltConfig,
+        upload: { ...vltConfig.upload, skipPayeeMatch: true },
+      }
+      const service = new UploadService(
+        enabled,
+        storageConfig,
+        mockCredentialStore,
+        mockLogger,
+      )
+      const result = await service.uploadAccountTransactions("acc-1", { days: 0 })
+      expect(result.success).toBe(true)
+      expect(uploadTransactions).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ skipPayeeMatch: true }),
+        expect.anything(),
+      )
+
+      // Default (flag absent from config): the sync config carries no enabled
+      // value and VltClient omits the field from the wire.
+      const defaultService = new UploadService(
+        vltConfig,
+        storageConfig,
+        mockCredentialStore,
+        mockLogger,
+      )
+      const calls = vi.mocked(uploadTransactions).mock.calls
+      const priorCalls = calls.length
+      const defaultResult = await defaultService.uploadAccountTransactions(
+        "acc-1",
+        { days: 0 },
+      )
+      expect(defaultResult.success).toBe(true)
+      const syncArg = vi.mocked(uploadTransactions).mock.calls[priorCalls][2]
+      expect(syncArg.skipPayeeMatch).toBeUndefined()
     })
   })
 

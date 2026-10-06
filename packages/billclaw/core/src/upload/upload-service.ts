@@ -253,6 +253,9 @@ export class UploadService {
       defaultIncomeAccount:
         this.vltConfig.upload.defaultIncomeAccount || "Income:Unknown",
       filterPending: this.vltConfig.upload.filterPending ?? true,
+      // Opt-in passthrough (vlt #1518): VltClient omits it from the wire
+      // unless explicitly enabled.
+      skipPayeeMatch: this.vltConfig.upload.skipPayeeMatch,
     }
 
     // 6. Upload to VLT

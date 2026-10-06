@@ -243,6 +243,66 @@ describe("VltClient", () => {
     expect(body.config.externalAccountId).toBeUndefined()
   })
 
+  it("should carry skipPayeeMatch: true when explicitly enabled (vlt #1518)", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ imported: 0, skipped: 0, pendingReview: 0, failed: 0 }),
+    })
+
+    await client.sync(
+      [
+        {
+          transaction_id: "txn-1",
+          amount: 1,
+          iso_currency_code: "USD",
+          date: "2024-01-01",
+          name: "T",
+          pending: false,
+          account_id: "acc-1",
+        },
+      ],
+      {
+        sourceAccount: "Assets:Bank",
+        defaultCurrency: "USD",
+        skipPayeeMatch: true,
+      },
+    )
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.config.skipPayeeMatch).toBe(true)
+  })
+
+  it("should omit skipPayeeMatch from the wire unless explicitly enabled (vlt #1518)", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ imported: 0, skipped: 0, pendingReview: 0, failed: 0 }),
+    })
+
+    await client.sync(
+      [
+        {
+          transaction_id: "txn-1",
+          amount: 1,
+          iso_currency_code: "USD",
+          date: "2024-01-01",
+          name: "T",
+          pending: false,
+          account_id: "acc-1",
+        },
+      ],
+      {
+        sourceAccount: "Assets:Bank",
+        defaultCurrency: "USD",
+        // Explicit false must ALSO stay off the wire — the field is a pure
+        // opt-in; absence keeps vlt's default payee-matching behavior.
+        skipPayeeMatch: false,
+      },
+    )
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect("skipPayeeMatch" in body.config).toBe(false)
+  })
+
   describe("external account links", () => {
     it("should list links filtered by provider with Bearer auth", async () => {
       const listResponse = {
