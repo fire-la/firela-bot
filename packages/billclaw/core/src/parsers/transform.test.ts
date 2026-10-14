@@ -7,7 +7,11 @@
  */
 
 import { describe, it, expect } from "vitest"
-import { transformParsedTransactions, type TransformOptions } from "./transform.js"
+import {
+  transformParsedTransactions,
+  transformParsedBillTransactions,
+  type TransformOptions,
+} from "./transform.js"
 import type { RawTransaction } from "@firela/parser-core"
 
 // Minimal Decimal-like type for testing
@@ -185,5 +189,146 @@ describe("transformParsedTransactions", () => {
 
       expect(result[0].amount).toBe(9999999.99)
     })
+  })
+})
+
+describe("transformParsedBillTransactions", () => {
+  // Same mock helpers as above, scoped for the parsed-bill leg (#45).
+  // Dates use LOCAL-component construction (new Date(y, m, d)) to match how
+  // the pinned parsers build them — the transform reads local components
+  // back, so these tests are timezone-stable on any runtime.
+  function createMockTransaction(overrides: Partial<RawTransaction<unknown>> = {}): RawTransaction<unknown> {
+    return {
+      date: new Date(2024, 2, 15),
+      amount: mockDecimal("-88.50") as unknown as RawTransaction["amount"],
+      currency: "CNY",
+      payee: "Test Merchant",
+      description: "Test transaction description",
+      category: undefined,
+      metadata: { method: "wallet-balance" },
+      ...overrides,
+    }
+  }
+
+  it("renders the bill's stated calendar date regardless of runtime timezone", () => {
+    // A parser Date at local midnight must round-trip to the same date —
+    // toISOString() would shift it a day early on runtimes east of UTC.
+    const [row] = transformParsedBillTransactions([createMockTransaction()])
+    expect(row.date).toBe("2024-03-15")
+  })
+
+  it("maps to the camelCase parsed-bill row shape", () => {
+    const result = transformParsedBillTransactions([createMockTransaction()])
+
+    expect(result).toHaveLength(1)
+    expect(result[0]).toEqual({
+      id: "2024-03-15|-88.5|CNY|Test transaction description#1",
+      date: "2024-03-15",
+      amount: -88.5,
+      currency: "CNY",
+      description: "Test transaction description",
+      payee: "Test Merchant",
+      fundingSource: "wallet-balance",
+    })
+  })
+
+  it("passes the parser's IGN-signed amount through verbatim (no negation)", () => {
+    const expense = transformParsedBillTransactions([
+      createMockTransaction({ amount: mockDecimal("-42.00") as unknown as RawTransaction["amount"] }),
+    ])
+    const income = transformParsedBillTransactions([
+      createMockTransaction({ amount: mockDecimal("42.00") as unknown as RawTransaction["amount"] }),
+    ])
+
+    expect(expense[0].amount).toBe(-42)
+    expect(income[0].amount).toBe(42)
+  })
+
+  describe("fundingSource extraction (dual-key bridge)", () => {
+    it("reads metadata.method (pinned TS @firela/parser-cn)", () => {
+      const result = transformParsedBillTransactions([
+        createMockTransaction({ metadata: { method: "bank-card(1234)" } }),
+      ])
+      expect(result[0].fundingSource).toBe("bank-card(1234)")
+    })
+
+    it("reads metadata.paymentMethod (wasm crates after bot#44)", () => {
+      const result = transformParsedBillTransactions([
+        createMockTransaction({ metadata: { paymentMethod: "huabei-credit" } }),
+      ])
+      expect(result[0].fundingSource).toBe("huabei-credit")
+    })
+
+    it("forwards the token verbatim — no normalization", () => {
+      const raw = "  CMB-debit-card(１２３４) "
+      const result = transformParsedBillTransactions([
+        createMockTransaction({ metadata: { method: raw } }),
+      ])
+      expect(result[0].fundingSource).toBe(raw)
+    })
+
+    it("omits fundingSource for non-string, empty, or absent tokens", () => {
+      const result = transformParsedBillTransactions([
+        createMockTransaction({ metadata: { method: 123 } }),
+        createMockTransaction({ metadata: { method: "" } }),
+        createMockTransaction({ metadata: undefined }),
+        createMockTransaction({ metadata: { payeeAccount: "x@y" } }),
+      ])
+
+      for (const row of result) {
+        expect(row.fundingSource).toBeUndefined()
+        expect("fundingSource" in row).toBe(false)
+      }
+    })
+
+    it("does not let a non-string paymentMethod shadow a valid method", () => {
+      const result = transformParsedBillTransactions([
+        createMockTransaction({ metadata: { paymentMethod: 123, method: "bank-card(1234)" } }),
+      ])
+      expect(result[0].fundingSource).toBe("bank-card(1234)")
+    })
+  })
+
+  describe("id strategy", () => {
+    it("uses customFields.orderNo (parser-native serial) when present", () => {
+      const result = transformParsedBillTransactions([
+        createMockTransaction({
+          customFields: { orderNo: "2024031511003001", status: "success" },
+        }),
+      ])
+      expect(result[0].id).toBe("2024031511003001")
+    })
+
+    it("gives distinct ids to identical same-day rows via the occurrence index", () => {
+      const twin = () => createMockTransaction({ customFields: undefined })
+      const result = transformParsedBillTransactions([twin(), twin()])
+
+      expect(result[0].id).not.toBe(result[1].id)
+      expect(result[0].id).toBe("2024-03-15|-88.5|CNY|Test transaction description#1")
+      expect(result[1].id).toBe("2024-03-15|-88.5|CNY|Test transaction description#2")
+    })
+
+    it("produces stable ids across re-transforms of the same rows (re-import dedup)", () => {
+      const rows = [
+        createMockTransaction({ customFields: undefined }),
+        createMockTransaction({ customFields: undefined }),
+      ]
+      const first = transformParsedBillTransactions(rows).map((r) => r.id)
+      const second = transformParsedBillTransactions(rows).map((r) => r.id)
+
+      expect(first).toEqual(second)
+    })
+  })
+
+  it("falls back description to payee, and omits payee when absent", () => {
+    const [noDescription] = transformParsedBillTransactions([
+      createMockTransaction({ description: "", payee: "Fallback Payee" }),
+    ])
+    const [noPayee] = transformParsedBillTransactions([
+      createMockTransaction({ payee: undefined }),
+    ])
+
+    expect(noDescription.description).toBe("Fallback Payee")
+    expect("payee" in noPayee).toBe(false)
   })
 })

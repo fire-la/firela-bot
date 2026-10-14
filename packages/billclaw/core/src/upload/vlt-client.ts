@@ -55,6 +55,37 @@ export interface PlaidTransactionUpload {
 }
 
 /**
+ * Parsed-bill-format transaction for VLT upload (fire-la/firela-bot#45).
+ *
+ * Local mirror of vlt's ParsedBillRawTransaction wire shape
+ * (firela-vlt apps/api .../providers/interfaces/parsed-bill.types.ts) —
+ * @firela/api-types types provider-sync rows as Record<string, unknown>[]
+ * and cannot express per-row fields, so the shape is mirrored here the same
+ * way PlaidTransactionUpload mirrors the plaid row shape.
+ *
+ * Amount follows the IGN sign convention (positive = income, negative =
+ * expense) and is passed through verbatim — vlt's parsed-bill adapter does
+ * NOT negate (unlike the plaid adapter).
+ */
+export interface ParsedBillTransactionUpload {
+  /** Optional deduplication key; vlt hashes date|amount|currency|description when absent */
+  id?: string
+  /** Date in YYYY-MM-DD format */
+  date: string
+  /** Amount, IGN sign convention (positive = income, negative = expense) */
+  amount: number
+  currency: string
+  description: string
+  payee?: string
+  category?: string
+  /**
+   * Per-row payment-method token, verbatim (ADR-0130 v2 decision 7).
+   * Normalization is single-sided in vlt at resolution/CRUD time — never here.
+   */
+  fundingSource?: string
+}
+
+/**
  * Provider sync configuration for VLT upload
  */
 export interface ProviderSyncConfig {
@@ -89,6 +120,15 @@ export interface ProviderSyncConfig {
    * behavior.
    */
   skipPayeeMatch?: boolean
+  /**
+   * Platform canonical name for method-namespace funding routing
+   * (ADR-0130 decision 7). Mirrors vlt's ProviderSyncConfig.platform —
+   * parsed-bill rows carrying a fundingSource token resolve via
+   * ExternalAccountLink 'method:{platform}:{token}' keys before the generic
+   * alias leg. Sent on the wire ONLY when set (single source: vlt
+   * prisma/seeds/platforms.seed.ts canonicals).
+   */
+  platform?: string
 }
 
 /**
@@ -178,7 +218,7 @@ export class VltClient {
   }
 
   /**
-   * Upload transactions to VLT via Provider Sync API
+   * Upload transactions to VLT via Provider Sync API (plaid transport)
    *
    * @param transactions - Transactions in Plaid format
    * @param syncConfig - Provider sync configuration
@@ -189,31 +229,72 @@ export class VltClient {
     transactions: PlaidTransactionUpload[],
     syncConfig: ProviderSyncConfig,
   ): Promise<VltUploadResult> {
-    const endpoint = "/bean/import/provider/plaid/sync"
-
-    const requestBody = {
-      config: {
-        sourceAccount: syncConfig.sourceAccount,
-        defaultCurrency: syncConfig.defaultCurrency,
-        defaultExpenseAccount: syncConfig.defaultExpenseAccount,
-        defaultIncomeAccount: syncConfig.defaultIncomeAccount,
-        filterPending: syncConfig.filterPending ?? true,
-        // Forward per-batch external account id when provided (ADR-0113 #17).
-        // billclaw currently uploads per-tx, so this is usually absent.
-        ...(syncConfig.externalAccountId
-          ? { externalAccountId: syncConfig.externalAccountId }
-          : {}),
-        // Opt-in field (vlt #1518): carried only when explicitly enabled —
-        // an absent/false value keeps vlt's default payee-matching behavior.
-        ...(syncConfig.skipPayeeMatch === true
-          ? { skipPayeeMatch: true }
-          : {}),
-      },
+    return this.postProviderSync("/bean/import/provider/plaid/sync", {
+      config: this.buildConfigBody(syncConfig),
       transactions,
-    }
+    })
+  }
 
+  /**
+   * Upload parsed-bill transactions to VLT via Provider Sync API
+   * (fire-la/firela-bot#45 — CN bill leg convergence, ADR-0130 v2 D7)
+   *
+   * NOTE for CN bills: vlt loads funding-route account templates from the
+   * request :region, so callers should sync CN bills under region 'cn' —
+   * the CLI import command enforces this fail-loud; this method itself is
+   * region-agnostic like the underlying endpoint.
+   *
+   * @param transactions - Transactions in parsed-bill format
+   * @param syncConfig - Provider sync configuration (platform activates
+   *   method-namespace funding routing on vlt)
+   * @returns Upload result with counts
+   * @throws UserError if upload fails after retries
+   */
+  async syncParsedBill(
+    transactions: ParsedBillTransactionUpload[],
+    syncConfig: ProviderSyncConfig,
+  ): Promise<VltUploadResult> {
+    return this.postProviderSync("/bean/import/provider/parsed-bill/sync", {
+      config: this.buildConfigBody(syncConfig),
+      transactions,
+    })
+  }
+
+  /**
+   * Build the wire config object shared by all provider sync uploads.
+   * Optional opt-in fields are carried only when explicitly set.
+   */
+  private buildConfigBody(syncConfig: ProviderSyncConfig): Record<string, unknown> {
+    return {
+      sourceAccount: syncConfig.sourceAccount,
+      defaultCurrency: syncConfig.defaultCurrency,
+      defaultExpenseAccount: syncConfig.defaultExpenseAccount,
+      defaultIncomeAccount: syncConfig.defaultIncomeAccount,
+      filterPending: syncConfig.filterPending ?? true,
+      // Forward per-batch external account id when provided (ADR-0113 #17).
+      ...(syncConfig.externalAccountId
+        ? { externalAccountId: syncConfig.externalAccountId }
+        : {}),
+      // Opt-in field (vlt #1518): carried only when explicitly enabled —
+      // an absent/false value keeps vlt's default payee-matching behavior.
+      ...(syncConfig.skipPayeeMatch === true
+        ? { skipPayeeMatch: true }
+        : {}),
+      // Opt-in field (ADR-0130 decision 7): platform canonical for
+      // method-namespace funding routing; carried only when set.
+      ...(syncConfig.platform ? { platform: syncConfig.platform } : {}),
+    }
+  }
+
+  /**
+   * POST a provider sync request and parse the shared response DTO.
+   */
+  private async postProviderSync(
+    endpoint: string,
+    requestBody: { config: Record<string, unknown>; transactions: unknown[] },
+  ): Promise<VltUploadResult> {
     this.logger?.info?.(
-      `Uploading ${transactions.length} transactions to VLT (${this.config.region})...`,
+      `Uploading ${requestBody.transactions.length} transactions to VLT (${this.config.region})...`,
     )
 
     const response = await this.requestWithRetry(endpoint, {
@@ -497,4 +578,18 @@ export async function uploadTransactions(
 ): Promise<VltUploadResult> {
   const client = new VltClient(config, logger)
   return client.sync(transactions, syncConfig)
+}
+
+/**
+ * Create a VltClient and upload parsed-bill transactions in one call
+ * (fire-la/firela-bot#45 CN bill leg).
+ */
+export async function uploadParsedBillTransactions(
+  config: VltClientConfig,
+  transactions: ParsedBillTransactionUpload[],
+  syncConfig: ProviderSyncConfig,
+  logger?: Logger,
+): Promise<VltUploadResult> {
+  const client = new VltClient(config, logger)
+  return client.syncParsedBill(transactions, syncConfig)
 }

@@ -3,7 +3,12 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { ParserRegistry, parserRegistry, type ParserName } from "./registry.js"
+import {
+  ParserRegistry,
+  parserRegistry,
+  PARSER_PLATFORM_CANONICAL,
+  type ParserName,
+} from "./registry.js"
 
 describe("ParserRegistry", () => {
   let registry: ParserRegistry
@@ -85,5 +90,36 @@ describe("parserRegistry (default instance)", () => {
 
   it("should have detect method", () => {
     expect(typeof parserRegistry.detect).toBe("function")
+  })
+})
+
+describe("PARSER_PLATFORM_CANONICAL", () => {
+  // Pin the bridge copy against its single source of truth: vlt
+  // prisma/seeds/platforms.seed.ts (PLATFORMS_DATA canonicals). A value
+  // change here must be a deliberate sync with that seed (or the bot#44
+  // crate-manifest switch deleting this table) — never a drive-by edit.
+  // Trap: cmbc = China Minsheng Bank, NOT China Merchants Bank (cmb).
+  it("pins the four CN parser canonicals (drift against vlt seed turns this red)", () => {
+    expect(PARSER_PLATFORM_CANONICAL).toEqual({
+      "alipay-web": "alipay",
+      "alipay-mobile": "alipay",
+      "cmbc-credit": "cmbc",
+      "ccb-debit": "ccb",
+    })
+  })
+
+  it("is exhaustive: every parser is either mapped or an explicitly known non-CN parser", () => {
+    // A parser added to the registry WITHOUT a mapping decision here turns
+    // this red — an unmapped CN parser would silently fall back to the
+    // legacy plaid transport (including its sign inversion) in import.ts.
+    const explicitlyNonCn: ParserName[] = ["hsbc-hk", "degiro", "interactive-brokers"]
+    for (const name of parserRegistry.list()) {
+      const mapped = PARSER_PLATFORM_CANONICAL[name] !== undefined
+      const knownNonCn = explicitlyNonCn.includes(name)
+      expect(
+        mapped || knownNonCn,
+        `parser '${name}' is neither in PARSER_PLATFORM_CANONICAL nor the explicit non-CN list`,
+      ).toBe(true)
+    }
   })
 })

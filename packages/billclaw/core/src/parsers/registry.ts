@@ -51,6 +51,31 @@ const PARSERS: Record<ParserName, new () => Parser<RawTransaction<Record<string,
 };
 
 /**
+ * CN parser name -> dir Platform canonical, sent as ProviderSyncConfig.platform
+ * for method-namespace funding routing (fire-la/firela-bot#45, ADR-0130 D7).
+ *
+ * GUARDED BRIDGE COPY (Rule 0 disclosure): the single source of truth for
+ * platform canonicals is vlt's `prisma/seeds/platforms.seed.ts`
+ * (PLATFORMS_DATA); the only sanctioned duplication in the ecosystem is the
+ * workflow-synced firela-sdk `scripts/platform-canonicals.json`. This
+ * hand table exists solely because the pinned TS @firela/parser-* packages
+ * carry no platform metadata (the wasm crates of bot#44 do — replace this
+ * table with crate-manifest canonicals when that migration lands). Values
+ * are pinned by registry.test.ts; drift against the seed turns it red.
+ *
+ * Naming trap: `cmb` = China Merchants Bank while the `cmbc-credit` parser is
+ * China *Minsheng* Bank -> canonical `cmbc` (near-identical acronyms).
+ * Non-CN parsers are absent: they emit no fundingSource rows, so platform
+ * is inert for them.
+ */
+export const PARSER_PLATFORM_CANONICAL: Partial<Record<ParserName, string>> = {
+  'alipay-web': 'alipay',
+  'alipay-mobile': 'alipay',
+  'cmbc-credit': 'cmbc',
+  'ccb-debit': 'ccb',
+};
+
+/**
  * Parser registry for detecting and obtaining parsers.
  */
 export class ParserRegistry {

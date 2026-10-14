@@ -1,0 +1,6 @@
+---
+"@firela/billclaw-core": minor
+"@firela/billclaw-cli": patch
+---
+
+feat(upload): converge the CN bill leg to parsed-bill/sync with per-row fundingSource (fire-la/firela-bot#45, ADR-0130 v2 decision 7) - CN parsers (alipay-web/alipay-mobile/cmbc-credit/ccb-debit) now upload through `POST /bean/import/provider/parsed-bill/sync` with each row carrying a verbatim `fundingSource` payment-method token (dual-key bridge over metadata `paymentMethod`/`method`) and `ProviderSyncConfig` gaining the optional `platform` canonical that activates vlt's method-namespace funding routing; new `ParsedBillTransactionUpload` row shape, `transformParsedBillTransactions` (parser-native `customFields.orderNo` dedup id with a tuple+occurrence fallback so identical same-day rows cannot collide), `VltClient.syncParsedBill`, and `uploadParsedBillTransactions`. Non-CN parsers keep the plaid transport untouched. CLI: `--account` now rides `config.externalAccountId` (matched against provider='parsed-bill' account links on vlt, sourceAccount fallback), and a CN bill under a non-'cn' region fails loud with guidance instead of silently misrouting. Also fixes the pre-existing sign inversion: the legacy plaid transport negated the parser's IGN-signed amounts, so CN expenses were booked as income.

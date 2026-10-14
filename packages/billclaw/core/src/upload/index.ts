@@ -15,9 +15,11 @@
 export {
   VltClient,
   uploadTransactions,
+  uploadParsedBillTransactions,
   checkUploadResult,
   type VltClientConfig,
   type PlaidTransactionUpload,
+  type ParsedBillTransactionUpload,
   type ProviderSyncConfig,
   type VltUploadResult,
 } from "./vlt-client.js"

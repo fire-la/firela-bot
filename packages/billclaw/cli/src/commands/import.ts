@@ -10,12 +10,16 @@ import { Spinner } from "../utils/progress.js"
 import { success } from "../utils/format.js"
 import {
   parserRegistry,
+  PARSER_PLATFORM_CANONICAL,
   type ParserName,
   transformParsedTransactions,
+  transformParsedBillTransactions,
 } from "@firela/billclaw-core"
 import {
   uploadTransactions,
+  uploadParsedBillTransactions,
   type PlaidTransactionUpload,
+  type ParsedBillTransactionUpload,
   type ProviderSyncConfig,
 } from "@firela/billclaw-core"
 import { VltAuthManager } from "@firela/billclaw-core"
@@ -122,39 +126,75 @@ async function runImport(
     return
   }
 
-  // Transform to Plaid format
-  const plaidTransactions = transformParsedTransactions(result.data, {
-    accountId: accountId,
-    pending: false,
-  })
+  // CN parsers converge to the parsed-bill transport (#45); others keep the
+  // plaid transport. The transport is keyed off the platform-canonical table
+  // — a parser present there is by definition a CN bill parser. The
+  // discriminated payload keeps the row shape and transport paired at
+  // compile time.
+  const platform = PARSER_PLATFORM_CANONICAL[detectedParserName]
+  const payload: ImportPayload = platform
+    ? {
+        transport: "parsed-bill",
+        platform,
+        rows: transformParsedBillTransactions(result.data),
+      }
+    : {
+        transport: "plaid",
+        rows: transformParsedTransactions(result.data, {
+          accountId: accountId,
+          pending: false,
+        }),
+      }
 
-  console.log(`Transformed ${plaidTransactions.length} transaction(s) for upload`)
+  console.log(`Transformed ${payload.rows.length} transaction(s) for upload`)
 
   if (dryRun) {
     console.log("")
     console.log("Dry run mode - skipping upload")
     console.log("")
     console.log("Sample transactions:")
-    for (const txn of plaidTransactions.slice(0, 3)) {
-      console.log(`  - ${txn.date}: ${txn.name} (${txn.amount} ${txn.iso_currency_code})`)
+    const sample: string[] =
+      payload.transport === "parsed-bill"
+        ? payload.rows
+            .slice(0, 3)
+            .map((r) => `${r.date}: ${r.description} (${r.amount} ${r.currency})`)
+        : payload.rows
+            .slice(0, 3)
+            .map((r) => `${r.date}: ${r.name} (${r.amount} ${r.iso_currency_code})`)
+    for (const line of sample) {
+      console.log(`  - ${line}`)
     }
-    if (plaidTransactions.length > 3) {
-      console.log(`  ... and ${plaidTransactions.length - 3} more`)
+    if (payload.rows.length > 3) {
+      console.log(`  ... and ${payload.rows.length - 3} more`)
     }
     return
   }
 
   // Upload to VLT
-  await handleUpload(context, plaidTransactions, accountId)
+  await handleUpload(context, payload, accountId)
 }
 
 /**
+ * Upload payload pairing the transport with its row shape (compile-time).
+ * parsed-bill = the CN bill leg (#45); plaid = everything else, unchanged.
+ */
+type ImportPayload =
+  | { transport: "plaid"; rows: PlaidTransactionUpload[] }
+  | { transport: "parsed-bill"; platform: string; rows: ParsedBillTransactionUpload[] }
+
+/**
  * Handle VLT upload
+ *
+ * CN bill parsers upload through the parsed-bill transport (#45): `accountId`
+ * then rides config.externalAccountId (looked up against provider='parsed-bill'
+ * ExternalAccountLink rows on vlt, falling back to sourceAccount on miss) and
+ * the payload's platform carries the canonical for method-namespace funding
+ * routing. Non-CN parsers keep the legacy plaid transport untouched.
  */
 async function handleUpload(
   context: CliContext,
-  transactions: PlaidTransactionUpload[],
-  _accountId: string,
+  payload: ImportPayload,
+  accountId: string,
 ): Promise<void> {
   const { runtime } = context
   const config = await runtime.config.getConfig()
@@ -172,6 +212,22 @@ async function handleUpload(
     console.error("Error: VLT upload configuration missing")
     console.error("Run 'billclaw config' to configure upload settings")
     return
+  }
+
+  // CN bills must sync under region 'cn': vlt loads funding-route account
+  // templates from the request :region, so a CN bill under 'us' can never
+  // resolve generic wallet-balance-style tokens. The legacy plaid transport masked
+  // this because its rule engine derived region from the sourceAccount path —
+  // fail loud instead of silently misrouting (#45).
+  if (payload.transport === "parsed-bill" && config.vlt.region !== "cn") {
+    console.error("")
+    console.error(`Error: CN bill import requires VLT region 'cn' (current: '${config.vlt.region}')`)
+    console.error("vlt loads funding-source account templates per region, so a CN")
+    console.error("bill synced under another region cannot resolve payment-method routing.")
+    console.error("")
+    console.error("Fix: set region to 'cn' in your VLT config (billclaw config) or the")
+    console.error("vlt.region setting, then re-run the import.")
+    process.exit(1)
   }
 
   const spinner = new Spinner({ text: "Uploading to VLT..." }).start()
@@ -194,18 +250,30 @@ async function handleUpload(
       defaultExpenseAccount: config.vlt.upload.defaultExpenseAccount || "Expenses:Unknown",
       defaultIncomeAccount: config.vlt.upload.defaultIncomeAccount || "Income:Unknown",
       filterPending: config.vlt.upload.filterPending ?? true,
+      // CN leg (#45): per-invocation routing key — the parsed-bill batch
+      // external id, resolved against provider='parsed-bill' account links
+      // on vlt (sourceAccount fallback when no link matches). Non-CN parsers
+      // keep per-row routing via the plaid transform and send no batch id.
+      ...(payload.transport === "parsed-bill"
+        ? { externalAccountId: accountId, platform: payload.platform }
+        : {}),
     }
 
-    const result = await uploadTransactions(
-      {
-        apiUrl: config.vlt.apiUrl,
-        apiToken,
-        region: config.vlt.region,
-      },
-      transactions,
-      syncConfig,
-      runtime.logger,
-    )
+    const vltConfig = {
+      apiUrl: config.vlt.apiUrl,
+      apiToken,
+      region: config.vlt.region,
+    }
+
+    const result =
+      payload.transport === "parsed-bill"
+        ? await uploadParsedBillTransactions(
+            vltConfig,
+            payload.rows,
+            syncConfig,
+            runtime.logger,
+          )
+        : await uploadTransactions(vltConfig, payload.rows, syncConfig, runtime.logger)
 
     spinner.succeed("Upload complete")
 
@@ -249,7 +317,8 @@ export const importCommand: CliCommand = {
     },
     {
       flags: "-a, --account <id>",
-      description: "Target account ID for uploads",
+      description:
+        "External account ID for upload routing (CN bills: matched against parsed-bill account links)",
     },
     {
       flags: "-d, --dry-run",

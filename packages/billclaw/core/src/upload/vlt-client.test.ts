@@ -153,6 +153,78 @@ describe("VltClient", () => {
     )
   })
 
+  it("should upload parsed-bill transactions to the parsed-bill/sync endpoint (#45)", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ imported: 2, skipped: 0, pendingReview: 1, failed: 0 }),
+    })
+
+    const result = await client.syncParsedBill(
+      [
+        {
+          id: "2024031511003001",
+          date: "2024-03-15",
+          amount: -88.5,
+          currency: "CNY",
+          description: "Subway ride",
+          payee: "Subway",
+          fundingSource: "wallet-balance",
+        },
+      ],
+      {
+        sourceAccount: "Assets:CN:Alipay",
+        defaultCurrency: "CNY",
+        platform: "alipay",
+        externalAccountId: "checking-123",
+      },
+    )
+
+    expect(result.imported).toBe(2)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe("http://localhost:3000/api/v1/us/bean/import/provider/parsed-bill/sync")
+
+    const body = JSON.parse((init as RequestInit).body as string)
+    expect(body.config).toEqual({
+      sourceAccount: "Assets:CN:Alipay",
+      defaultCurrency: "CNY",
+      defaultExpenseAccount: undefined,
+      defaultIncomeAccount: undefined,
+      filterPending: true,
+      externalAccountId: "checking-123",
+      platform: "alipay",
+    })
+    expect(body.transactions).toEqual([
+      {
+        id: "2024031511003001",
+        date: "2024-03-15",
+        amount: -88.5,
+        currency: "CNY",
+        description: "Subway ride",
+        payee: "Subway",
+        fundingSource: "wallet-balance",
+      },
+    ])
+  })
+
+  it("omits platform and externalAccountId from the wire unless set (#45)", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ imported: 0, skipped: 0, pendingReview: 0, failed: 0 }),
+    })
+
+    await client.syncParsedBill(
+      [{ date: "2024-03-15", amount: -1, currency: "CNY", description: "x" }],
+      { sourceAccount: "A", defaultCurrency: "CNY" },
+    )
+
+    const [, init] = mockFetch.mock.calls[0]
+    const body = JSON.parse((init as RequestInit).body as string)
+    expect("platform" in body.config).toBe(false)
+    expect("externalAccountId" in body.config).toBe(false)
+    expect("skipPayeeMatch" in body.config).toBe(false)
+  })
+
   it("should reject on a non-2xx upload response instead of parsing the error body (#37)", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,

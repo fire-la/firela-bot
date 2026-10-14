@@ -4,5 +4,5 @@
  * @module @firela/billclaw-core/parsers
  */
 
-export { ParserRegistry, parserRegistry, type ParserName } from './registry.js';
-export { transformParsedTransactions, type TransformOptions } from './transform.js';
+export { ParserRegistry, parserRegistry, PARSER_PLATFORM_CANONICAL, type ParserName } from './registry.js';
+export { transformParsedTransactions, transformParsedBillTransactions, type TransformOptions } from './transform.js';
