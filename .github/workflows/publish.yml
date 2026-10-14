@@ -102,6 +102,13 @@ jobs:
                 pnpm pack --pack-destination "$PACK_DIR"
                 npm publish "$PACK_DIR"/*.tgz --access public
               fi
-              cd ../..
+              # Return to the workspace root explicitly: `cd ../..` only
+              # unwinds two levels, so after any 3-level package path
+              # (packages/billclaw/*) the loop drifted into packages/ and
+              # silently skipped every later package (#48).
+              cd "$GITHUB_WORKSPACE"
+            else
+              echo "!! $package/package.json not found from $(pwd) — failing the publish"
+              exit 1
             fi
           done
