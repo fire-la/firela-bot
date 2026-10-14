@@ -58,6 +58,26 @@ jobs:
       - name: Build all packages
         run: pnpm -r build
 
+      # OIDC preflight diagnostics (#48): the token-free publish path failed
+      # ENEEDAUTH on its first run. Print the npm version (trusted publishing
+      # needs >= 11.5.1) and the effective merged npm config with credential
+      # lines suppressed ENTIRELY (format-independent: no redaction regex to
+      # get wrong), then remove ~/.npmrc so no pnpm-side registry/auth line
+      # can short-circuit the OIDC handshake — the publish step needs no
+      # npmrc. The repo's project .npmrc (allowed-build only) stays untouched.
+      - name: Diagnose npm OIDC preconditions
+        run: |
+          node --version
+          npm --version
+          echo "--- effective npm config (credential lines suppressed entirely) ---"
+          npm config list | grep -viE '_auth|token|password|_password' || true
+          if [ -f "$HOME/.npmrc" ]; then
+            echo "--- removing ~/.npmrc before publish ---"
+            rm -f "$HOME/.npmrc"
+          else
+            echo "no ~/.npmrc present"
+          fi
+
       # Single npm publishing face (version.yml no longer publishes; a tag is
       # the release moment). pnpm only PACKS (workspace: protocol resolution);
       # the actual registry publish goes through the npm CLI, whose OIDC
