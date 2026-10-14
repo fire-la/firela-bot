@@ -14,6 +14,7 @@ import {
   type ParserName,
   transformParsedTransactions,
   transformParsedBillTransactions,
+  toBillDateString,
 } from "@firela/billclaw-core"
 import {
   uploadTransactions,
@@ -108,7 +109,7 @@ async function runImport(
     console.log("")
     console.log("Sample raw transactions:")
     for (const txn of result.data.slice(0, 3)) {
-      console.log(`  - ${txn.date.toISOString().split('T')[0]}: ${txn.payee} (${txn.amount} ${txn.currency})`)
+      console.log(`  - ${toBillDateString(txn.date)}: ${txn.payee} (${txn.amount} ${txn.currency})`)
     }
     if (result.data.length > 3) {
       console.log(`  ... and ${result.data.length - 3} more`)

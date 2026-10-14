@@ -29,10 +29,13 @@ function mockDecimal(value: number | string): MockDecimal {
 }
 
 describe("transformParsedTransactions", () => {
-  // Helper to create mock raw transaction
+  // Helper to create mock raw transaction. Dates use LOCAL-component
+  // construction (new Date(y, m, d)) to match how the pinned parsers build
+  // them — the transform renders local components back, so these tests are
+  // timezone-stable on any runtime (#46).
   function createMockTransaction(overrides: Partial<RawTransaction<unknown>> = {}): RawTransaction<unknown> {
     return {
-      date: new Date("2024-03-15"),
+      date: new Date(2024, 2, 15),
       amount: mockDecimal("-88.50") as unknown as RawTransaction["amount"],
       currency: "CNY",
       payee: "Test Merchant",
@@ -84,9 +87,8 @@ describe("transformParsedTransactions", () => {
       expect(result[0].iso_currency_code).toBe("USD")
     })
 
-    it("should map date correctly", () => {
-      const testDate = new Date("2024-01-15T10:30:00.000Z")
-      const transactions = [createMockTransaction({ date: testDate })]
+    it("should map date to the bill's stated calendar date (local round-trip, #46)", () => {
+      const transactions = [createMockTransaction({ date: new Date(2024, 0, 15) })]
       const result = transformParsedTransactions(transactions, defaultOptions)
 
       expect(result[0].date).toBe("2024-01-15")

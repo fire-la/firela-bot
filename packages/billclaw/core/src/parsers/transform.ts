@@ -38,7 +38,7 @@ export function transformParsedTransactions(
     transaction_id: txn.metadata?.id?.toString() || randomUUID(),
     amount: txn.amount.toNumber(),
     iso_currency_code: txn.currency,
-    date: txn.date.toISOString().split('T')[0],
+    date: toBillDateString(txn.date),
     merchant_name: txn.payee,
     name: txn.description || txn.payee || '',
     pending: options.pending ?? false,
@@ -91,6 +91,7 @@ function parsedBillId(
 
 /**
  * Render a parser Date as the bill's stated calendar date (YYYY-MM-DD).
+ * Shared by both upload transports (plaid leg #46, parsed-bill leg #45).
  *
  * All pinned parsers construct dates with the bill's Y/M/D as LOCAL
  * components (`new Date(year, month, day)`), so the date must be read back
@@ -98,7 +99,7 @@ function parsedBillId(
  * date one day early on runtimes east of UTC (e.g. UTC+8, where CN bills
  * originate). Local round-trip is stable in any runtime timezone.
  */
-function toBillDateString(date: Date): string {
+export function toBillDateString(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${date.getFullYear()}-${month}-${day}`;
