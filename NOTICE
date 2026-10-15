@@ -15,12 +15,29 @@ Commercial License. If you use these packages in a project that is not
 published under an AGPL-3.0-compatible license, you must obtain a
 Commercial License from Firela.
 
-| Package              | Version | License                         |
-|----------------------|---------|---------------------------------|
-| @firela/parser-core  | >=0.1.1 | AGPL-3.0-only / Commercial     |
-| @firela/parser-cn    | >=0.1.2 | AGPL-3.0-only / Commercial     |
-| @firela/parser-eu    | >=0.1.1 | AGPL-3.0-only / Commercial     |
-| @firela/parser-hk    | >=0.1.1 | AGPL-3.0-only / Commercial     |
+| Package                    | Version | License                         |
+|----------------------------|---------|---------------------------------|
+| @firela/cn-alipay          | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/cn-alipay-mobile   | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/cn-alipay-yuebao   | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/cn-wechat          | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/cn-wechat-xlsx     | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/cn-cmbc-credit     | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/cn-boc-credit      | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/cn-icbc-credit     | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/cn-ccb-debit       | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/eu-degiro          | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/eu-deutsche-bank   | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/eu-interactive-brokers | >=0.1.11 | AGPL-3.0-only / Commercial* |
+| @firela/hk-hsbc-credit     | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+| @firela/hk-hsbc-debit      | >=0.1.11 | AGPL-3.0-only / Commercial*    |
+
+* Dual-license per the user ruling on fire-la/firela-bot#44 (the crates
+share the TS predecessors' AGPL/Commercial intent); the crates' npm
+metadata currently carries only the Commercial License reference — the
+metadata fix is tracked as firela-sdk/firela-sdk#32. The deprecated
+TS @firela/parser-* packages (dual-licensed, frozen at 0.1.x) are no
+longer dependencies.
 
 For commercial licensing inquiries, contact: hello@firela.io
 
