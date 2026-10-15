@@ -1,0 +1,40 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-01-16",
+      "amount": "-1234.5",
+      "currency": "CNY",
+      "description": "消费",
+      "payee": "某商户",
+      "metadata": {
+        "cardNumber": "1234",
+        "narration": "消费-某商户",
+        "postingDate": "2024-01-17"
+      }
+    },
+    {
+      "date": "2024-01-18",
+      "amount": "100",
+      "currency": "USD",
+      "description": "某免税店",
+      "metadata": {
+        "cardNumber": "1234",
+        "narration": "某免税店",
+        "postingDate": "2024-01-19"
+      }
+    },
+    {
+      "date": "2024-01-20",
+      "amount": "-56.78",
+      "currency": "CNY",
+      "description": "消费",
+      "payee": "网络商户",
+      "metadata": {
+        "cardNumber": "1234",
+        "narration": "消费-网络商户",
+        "postingDate": "2024-01-21"
+      }
+    }
+  ]
+}

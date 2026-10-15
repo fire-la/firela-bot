@@ -1,0 +1,52 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-01-16",
+      "amount": "-672.5",
+      "currency": "CNY",
+      "description": "消费",
+      "payee": "某百货商场/上海",
+      "metadata": {
+        "cardNumber": "4567",
+        "originalAmount": "100 USD",
+        "transactionType": "消费"
+      }
+    },
+    {
+      "date": "2024-01-18",
+      "amount": "500",
+      "currency": "CNY",
+      "description": "还款存入",
+      "payee": "本行转账",
+      "metadata": {
+        "cardNumber": "4567",
+        "transactionType": "还款存入"
+      }
+    },
+    {
+      "date": "2024-01-20",
+      "amount": "168.13",
+      "currency": "CNY",
+      "description": "购物退款",
+      "payee": "某商户/北京",
+      "metadata": {
+        "cardNumber": "4567",
+        "isRefund": true,
+        "originalAmount": "25 USD",
+        "transactionType": "购物退款"
+      }
+    },
+    {
+      "date": "2024-01-22",
+      "amount": "-88",
+      "currency": "CNY",
+      "description": "消费",
+      "payee": "某超市",
+      "metadata": {
+        "cardNumber": "4567",
+        "transactionType": "消费"
+      }
+    }
+  ]
+}

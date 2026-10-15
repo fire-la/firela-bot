@@ -145,8 +145,9 @@ jobs:
           files: ./packages/*/coverage/coverage-final.json
 
   cloudflare-worker-tests:
-    name: Cloudflare Worker Tests
+    name: Worker Bundle Smoke (workerd)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -154,7 +155,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -181,11 +182,25 @@ jobs:
       - name: Build packages
         run: pnpm -r build
 
-      - name: Run Cloudflare Worker tests
-        run: pnpm --filter @firela/billclaw-worker test
-        env:
-          # Test environment variables
-          PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID || 'test_client' }}
-          PLAID_SECRET: ${{ secrets.PLAID_SECRET || 'test_secret' }}
-          JWT_SECRET: test-jwt-secret-for-ci-at-least-32-characters
-          SETUP_PASSWORD: ${{ secrets.SETUP_PASSWORD || 'test-setup-password' }}
+      - name: Worker smoke — bundle the wasm parser registry for workerd
+        # Wrangler dry-run proves the crates' worker condition resolves to
+        # index-worker.js (static wasm imports) through the
+        # @firela/billclaw-core/parsers subpath (fire-la/firela-bot#44 AC1;
+        # runtime instantiation is covered by firela-sdk's worker-golden
+        # host plus the wrangler dev evidence in the migration PR). This
+        # replaces a step that ran `pnpm --filter @firela/billclaw-worker
+        # test` — a package that does not exist, a silent no-op.
+        run: |
+          DIST=$(mktemp -d)
+          pnpm --filter @firela/billclaw-core exec wrangler deploy --dry-run \
+            --config "$GITHUB_WORKSPACE/scripts/worker-smoke/wrangler.toml" --outdir "$DIST"
+          # The bundle must carry exactly the declared crates' wasm payloads
+          # (expected count derived from core's dependency list — no magic
+          # constant to keep in sync).
+          EXPECTED=$(node -p "Object.keys(require('./packages/billclaw/core/package.json').dependencies)
+            .filter((d) => /^@firela\/(cn|eu|hk)-/.test(d)).length")
+          WASM_COUNT=$(ls "$DIST"/*.wasm 2>/dev/null | wc -l)
+          echo "wasm modules in bundle: $WASM_COUNT (expected $EXPECTED)"
+          test "$WASM_COUNT" -eq "$EXPECTED" || {
+            echo "worker bundle wasm module count mismatch"; exit 1
+          }

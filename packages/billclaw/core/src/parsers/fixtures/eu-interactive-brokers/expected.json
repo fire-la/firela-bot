@@ -1,0 +1,79 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-02-15",
+      "amount": "18549",
+      "currency": "USD",
+      "description": "BUY 100 AAPL",
+      "metadata": {
+        "assetCategory": "STK",
+        "code": "O",
+        "currency": "USD",
+        "description": "",
+        "fees": -1,
+        "ibOrderId": "",
+        "openCloseIndicator": "",
+        "orderId": "",
+        "proceeds": 18550,
+        "quantity": 100,
+        "sectionType": "Trades",
+        "symbol": "AAPL",
+        "tradeId": "",
+        "tradePrice": 185.5
+      }
+    },
+    {
+      "date": "2024-02-16",
+      "amount": "-18913",
+      "currency": "USD",
+      "description": "SELL 50 MSFT",
+      "metadata": {
+        "assetCategory": "STK",
+        "code": "C",
+        "currency": "USD",
+        "description": "",
+        "fees": -0.5,
+        "ibOrderId": "",
+        "openCloseIndicator": "",
+        "orderId": "",
+        "proceeds": -18912.5,
+        "quantity": -50,
+        "sectionType": "Trades",
+        "symbol": "MSFT",
+        "tradeId": "",
+        "tradePrice": 378.25
+      }
+    },
+    {
+      "date": "2024-02-20",
+      "amount": "500",
+      "currency": "USD",
+      "description": "Dividends: Apple Inc",
+      "metadata": {
+        "assetCategory": "",
+        "cashType": "Dividends",
+        "code": "",
+        "currency": "USD",
+        "description": "Apple Inc",
+        "sectionType": "CashTransactions",
+        "symbol": "AAPL"
+      }
+    },
+    {
+      "date": "2024-02-21",
+      "amount": "-25",
+      "currency": "USD",
+      "description": "Other Fees: Account Maintenance",
+      "metadata": {
+        "assetCategory": "",
+        "cashType": "Other Fees",
+        "code": "",
+        "currency": "USD",
+        "description": "Account Maintenance",
+        "sectionType": "CashTransactions",
+        "symbol": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-02-10",
+      "amount": "-68.5",
+      "currency": "CNY",
+      "description": "水果生鲜",
+      "payee": "盒马鲜生",
+      "metadata": {
+        "merchantOrderId": "MOW100",
+        "orderNo": "W10001",
+        "paymentMethod": "零钱",
+        "status": "支付成功",
+        "transactionType": "商户消费"
+      }
+    },
+    {
+      "date": "2024-01-23",
+      "amount": "25",
+      "currency": "CNY",
+      "description": "外卖订单",
+      "payee": "美团外卖",
+      "metadata": {
+        "orderNo": "W10002",
+        "paymentMethod": "零钱",
+        "status": "支付成功",
+        "transactionType": "商户消费"
+      }
+    }
+  ]
+}

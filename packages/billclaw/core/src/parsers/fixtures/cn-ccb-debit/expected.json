@@ -1,0 +1,42 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-02-05",
+      "amount": "-299",
+      "currency": "CNY",
+      "description": "网购支付",
+      "payee": "某电商店铺",
+      "metadata": {
+        "cardNumber": "0123",
+        "cashType": "钞",
+        "counterpartyName": "某电商店铺",
+        "location": "淘宝购物"
+      }
+    },
+    {
+      "date": "2024-02-10",
+      "amount": "15000",
+      "currency": "CNY",
+      "description": "工资入账",
+      "payee": "某科技有限公司",
+      "metadata": {
+        "cardNumber": "0123",
+        "cashType": "钞",
+        "counterpartyName": "某科技有限公司",
+        "location": "公司转账"
+      }
+    },
+    {
+      "date": "2024-02-15",
+      "amount": "-18.6",
+      "currency": "CNY",
+      "description": "便利店",
+      "metadata": {
+        "cardNumber": "0123",
+        "cashType": "钞",
+        "location": "上海浦东"
+      }
+    }
+  ]
+}

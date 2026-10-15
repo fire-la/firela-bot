@@ -1,0 +1,45 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-01-15",
+      "amount": "-156.80",
+      "currency": "HKD",
+      "description": "COFFEE SHOP",
+      "payee": "STARBUCKS",
+      "metadata": {
+        "area": "Central",
+        "country": "Hong Kong",
+        "postDate": "2024-01-16T00:00:00.000Z",
+        "transactionStatus": "POSTED"
+      }
+    },
+    {
+      "date": "2024-01-20",
+      "amount": "-200.00",
+      "currency": "HKD",
+      "description": "APPLE PAY - MCDONALD'S",
+      "payee": "MCDONALD'S",
+      "metadata": {
+        "country": "Hong Kong",
+        "paymentMethod": "Apple Pay",
+        "postDate": "2024-01-21T00:00:00.000Z",
+        "transactionStatus": "PENDING"
+      }
+    },
+    {
+      "date": "2024-01-25",
+      "amount": "-500.00",
+      "currency": "HKD",
+      "description": "UNIONPAY - SUPERMARKET",
+      "payee": "PARKNSHOP",
+      "metadata": {
+        "area": "Kowloon",
+        "country": "Hong Kong",
+        "paymentMethod": "UnionPay",
+        "postDate": "2024-01-26T00:00:00.000Z",
+        "transactionStatus": "POSTED"
+      }
+    }
+  ]
+}

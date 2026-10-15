@@ -105,4 +105,3 @@ export * from "./connection/index.js"
 export * from "./upload/index.js"
 
 // Parsers (CSV file format detection and parsing)
-export * from "./parsers/index.js"

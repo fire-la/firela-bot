@@ -1,0 +1,56 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-02-15",
+      "amount": "-510.5",
+      "currency": "EUR",
+      "description": "VWCE ETF BUY",
+      "metadata": {
+        "exchangeRate": 1.0,
+        "isin": "IE00BK5BQT80",
+        "localValue": 502.5,
+        "orderId": "ORD001",
+        "price": 50.25,
+        "product": "VWCE ETF",
+        "reference": "12345",
+        "transactionType": "BUY",
+        "venue": "XPAR"
+      }
+    },
+    {
+      "date": "2024-02-20",
+      "amount": "548",
+      "currency": "EUR",
+      "description": "APPLE INC SELL",
+      "metadata": {
+        "exchangeRate": 1.1,
+        "isin": "US0378331005",
+        "localValue": 556.5,
+        "orderId": "ORD003",
+        "price": 185.5,
+        "product": "APPLE INC",
+        "reference": "12347",
+        "transactionType": "SELL",
+        "venue": "NASDAQ"
+      }
+    },
+    {
+      "date": "2024-03-01",
+      "amount": "25",
+      "currency": "EUR",
+      "description": "CASH SWEEP DIVIDEND",
+      "metadata": {
+        "exchangeRate": 1.0,
+        "isin": "",
+        "localValue": 0.0,
+        "orderId": "ORD006",
+        "price": 0.0,
+        "product": "CASH SWEEP",
+        "reference": "12350",
+        "transactionType": "DIVIDEND",
+        "venue": ""
+      }
+    }
+  ]
+}

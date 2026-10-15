@@ -81,21 +81,48 @@ importers:
       '@firela/api-types':
         specifier: 0.0.0-canary.0ba0185
         version: 0.0.0-canary.0ba0185
-      '@firela/parser-cn':
-        specifier: ^0.1.2
-        version: 0.1.2(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)
-      '@firela/parser-core':
-        specifier: ^0.1.1
-        version: 0.1.1(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)
-      '@firela/parser-eu':
-        specifier: ^0.1.1
-        version: 0.1.1(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)
-      '@firela/parser-hk':
-        specifier: ^0.1.1
-        version: 0.1.1(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)
-      iconv-lite:
-        specifier: 0.6.3
-        version: 0.6.3
+      '@firela/cn-alipay':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/cn-alipay-mobile':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/cn-alipay-yuebao':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/cn-boc-credit':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/cn-ccb-debit':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/cn-cmbc-credit':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/cn-icbc-credit':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/cn-wechat':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/cn-wechat-xlsx':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/eu-degiro':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/eu-deutsche-bank':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/eu-interactive-brokers':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/hk-hsbc-credit':
+        specifier: 0.1.11
+        version: 0.1.11
+      '@firela/hk-hsbc-debit':
+        specifier: 0.1.11
+        version: 0.1.11
       jose:
         specifier: ^6.1.3
         version: 6.1.3
@@ -111,10 +138,6 @@ importers:
       zod:
         specifier: ^3.25.0
         version: 3.25.76
-    optionalDependencies:
-      keytar:
-        specifier: ^6.0.1
-        version: 6.0.1
     devDependencies:
       '@firela/runtime-adapters':
         specifier: workspace:*
@@ -143,6 +166,13 @@ importers:
       vitest:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@25.2.1)(@vitest/ui@3.2.4)(happy-dom@17.6.3)(jiti@1.21.7)(jsdom@26.1.0)
+      wrangler:
+        specifier: ^4.127.0
+        version: 4.127.0(@cloudflare/workers-types@5.20260828.1)
+    optionalDependencies:
+      keytar:
+        specifier: ^6.0.1
+        version: 6.0.1
 
   packages/runtime-adapters:
     devDependencies:
@@ -1011,37 +1041,61 @@ packages:
   '@firela/api-types@0.0.0-canary.0ba0185':
     resolution: {integrity: sha512-oCKWmOZ8/GVcw7ygW20RaiAL3ghvTBJcs39KctbrulZbsga4gxvMPmPAM4P0KozYkBAplODU6zG9GSBNiS1dVA==}
 
-  '@firela/parser-cn@0.1.2':
-    resolution: {integrity: sha512-yfKpyQlyuBA5roFpqn+vbpjoWS02JbdQeQR1jSU8857M1TyDnCKpstjybhXZuql7giFk/eXHWb2n801Tdxp1Aw==}
-    deprecated: 'Retired 2026-10 (firela ADR-0135): the TS parser layer is retired. New rail = @firela/* wasm crates (firela-sdk); CF Workers consume index-worker.js. Pinned versions keep installing.'
-    peerDependencies:
-      chrono-node: ^2.7.0
-      csv-parse: ^5.5.0
-      iconv-lite: 0.6.3
-      jschardet: ^3.0.0
+  '@firela/cn-alipay-mobile@0.1.11':
+    resolution: {integrity: sha512-hfpmtx+edo+69FGRpF3zgLqHcU9e/b62CPEnc//RNB5Dx3lzmuhjvcq+uAzYTuE2ISTuSk391DeSHzZOWW+kAA==}
+    engines: {node: '>=20'}
 
-  '@firela/parser-core@0.1.1':
-    resolution: {integrity: sha512-vg1E0NIJgAaRP6ppXtQsGX1nKHQMpr2XVwUT90BJHxv3UqSCHxVBbOXQoY9L1ld54ihUFAv8x9NK0JR7z/eQVw==}
-    deprecated: 'Retired 2026-10 (firela ADR-0135): the TS parser layer is retired. New rail = @firela/* wasm crates (firela-sdk); CF Workers consume index-worker.js. Pinned versions keep installing.'
-    peerDependencies:
-      chrono-node: ^2.7.0
-      csv-parse: ^5.5.0
-      iconv-lite: 0.6.3
-      jschardet: ^3.0.0
+  '@firela/cn-alipay-yuebao@0.1.11':
+    resolution: {integrity: sha512-vPux+8KAkwL7+zSakPhY0E49Ck7Wg9ahDAoktbd25eC0QTxOtMpUlLu50NpNCyDYj4Mk/BfHXDB49g8n+ea/gA==}
+    engines: {node: '>=20'}
 
-  '@firela/parser-eu@0.1.1':
-    resolution: {integrity: sha512-bhcej50rTybVLyv9nDN3UOdRmP7nTYepJtEdlkjteGck7c7eTYydaOd2FSW5i6IubI+BF64Ui2xmV3tAgaHEbQ==}
-    deprecated: 'Retired 2026-10 (firela ADR-0135): the TS parser layer is retired. New rail = @firela/* wasm crates (firela-sdk); CF Workers consume index-worker.js. Pinned versions keep installing.'
-    peerDependencies:
-      chrono-node: ^2.7.0
-      csv-parse: ^5.5.0
+  '@firela/cn-alipay@0.1.11':
+    resolution: {integrity: sha512-mbMVLril9DrVLZxp1EV0H1GBVkFROU+5wKokX8NwNM6SuR9FgXDCWoOz5vBAEPl9KdBAk7xPeyx8nYt3BhXU4A==}
+    engines: {node: '>=20'}
 
-  '@firela/parser-hk@0.1.1':
-    resolution: {integrity: sha512-gMecpU7D2oCjsI38pHhE7i1F2utEQlRAZ1YHTd8KZZLDGPvM2FLMVIzJXwNLgqdStfFn0wdYC0PCG25XuVtRSg==}
-    deprecated: 'Retired 2026-10 (firela ADR-0135): the TS parser layer is retired. New rail = @firela/* wasm crates (firela-sdk); CF Workers consume index-worker.js. Pinned versions keep installing.'
-    peerDependencies:
-      chrono-node: ^2.7.0
-      csv-parse: ^5.5.0
+  '@firela/cn-boc-credit@0.1.11':
+    resolution: {integrity: sha512-Cly/xe+9S3zPScCjnq8P0c0v8EbAeIiiVU+UwTNQMtSI00Dsd6ZhOkmlYVvZSooVfuKa/zbv6u6wc20lCGFR5A==}
+    engines: {node: '>=20'}
+
+  '@firela/cn-ccb-debit@0.1.11':
+    resolution: {integrity: sha512-ybJo97EEpdslDsQhcTf3Wo30sOFn80pV8qZOE7H8w7FWu1Ara73yh45+7QN09Anr66LefYqFz3RJoC25msCMqA==}
+    engines: {node: '>=20'}
+
+  '@firela/cn-cmbc-credit@0.1.11':
+    resolution: {integrity: sha512-BvhDL/Rr0VgIP1J/rpAe+1dhsnBiJ03e6Ez3I3O2/pjtUdw8GRKD6hS0Vy7HqkWPtcucLkzD1z/WKEc8F2xW/w==}
+    engines: {node: '>=20'}
+
+  '@firela/cn-icbc-credit@0.1.11':
+    resolution: {integrity: sha512-GgcIcve8MIDjTq9/pBkB0BWIH5NgyxCEWhl63x7XRJtK2YUAyNsXfBd+L/7LJ0IraXDB75QMy0GYZYgd5r540g==}
+    engines: {node: '>=20'}
+
+  '@firela/cn-wechat-xlsx@0.1.11':
+    resolution: {integrity: sha512-Z5fSjoPQ7p6tYAszic/EYV6yl7kcHsLbiSQ6ivZM36bOrkE1aAbJs5F720cE7s8CT6/CQLS1FgWsFufLjyhAsA==}
+    engines: {node: '>=20'}
+
+  '@firela/cn-wechat@0.1.11':
+    resolution: {integrity: sha512-lJHCbXBLYApFNOk5I/yeEnpftOGqrymArjb/85jymrWKMmkbiFAUriKw+PqtPLekslg/2PIe5xoImD3Cn8M1zw==}
+    engines: {node: '>=20'}
+
+  '@firela/eu-degiro@0.1.11':
+    resolution: {integrity: sha512-ZXMflvvZC+hFl9j4SDVvrCPw/HNMroETYch9B/iOegVbxiCjbBzCN2Go7pL1EjuyTtCxXLMBsAoC8xRfpc55Sw==}
+    engines: {node: '>=20'}
+
+  '@firela/eu-deutsche-bank@0.1.11':
+    resolution: {integrity: sha512-QvUuLW3N7Z9RY5O4UkPgNgnfyAYP+qjrh4Kmb4YOiqDxNB2HsJWWBCTBg7ZNGMhsXSFvF9OATGA5rEns8VjNdA==}
+    engines: {node: '>=20'}
+
+  '@firela/eu-interactive-brokers@0.1.11':
+    resolution: {integrity: sha512-GprR0WQyAQGUgOWMuxi/TgwuLUaMgf66PZdRPQwp2MMFBApo/pIRrsuhP29TxtN+HeN7G3Kd7WXVkEuGId0kww==}
+    engines: {node: '>=20'}
+
+  '@firela/hk-hsbc-credit@0.1.11':
+    resolution: {integrity: sha512-+Kf8pYC3n3vpoCVWRIu1f63W6Od++O+npTUxfmDKZOvQtUYM+UfdpCMdwJTP8wHE6u3z7LelCGXLF8adSXXSdA==}
+    engines: {node: '>=20'}
+
+  '@firela/hk-hsbc-debit@0.1.11':
+    resolution: {integrity: sha512-RdUyWhlkf7d9Ki0vLyJ8EeTG8PSv7p/R4x935rDmbkLsgkBHA9LSOiMcCu68yZzQ29Qx9/061X9g8a3TRGU11Q==}
+    engines: {node: '>=20'}
 
   '@floating-ui/core@1.7.5':
     resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
@@ -2344,9 +2398,6 @@ packages:
   '@standard-schema/utils@0.3.0':
     resolution: {integrity: sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g==}
 
-  '@swc/helpers@0.5.19':
-    resolution: {integrity: sha512-QamiFeIK3txNjgUTNppE6MiG3p7TdninpZu0E0PbqVh1a9FNLT2FRhisaa4NcaX52XVhA5l7Pk58Ft7Sqi/2sA==}
-
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
     engines: {node: '>=18'}
@@ -2676,10 +2727,6 @@ packages:
   chownr@1.1.4:
     resolution: {integrity: sha512-jJ0bqzaylmJtVnNgzTeSOs8DPavpbYgEr/b0YL8/2GO3xJEhInFmhKMUnEJQjZumK7KXGFhUy89PrsJWlakBVg==}
 
-  chrono-node@2.9.0:
-    resolution: {integrity: sha512-glI4YY2Jy6JII5l3d5FN6rcrIbKSQqKPhWsIRYPK2IK8Mm4Q1ZZFdYIaDqglUNf7gNwG+kWIzTn0omzzE0VkvQ==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
-
   ci-info@3.9.0:
     resolution: {integrity: sha512-NIxF55hv4nSqQswkAeiOi1r83xy8JldOFDTWiug55KBu9Jnblncd2U6ViHmYgHf01TPZS77NJBhBMKdWj9HQMQ==}
     engines: {node: '>=8'}
@@ -2772,9 +2819,6 @@ packages:
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
-
-  csv-parse@5.6.0:
-    resolution: {integrity: sha512-l3nz3euub2QMg5ouu5U09Ew9Wf6/wQ8I++ch1loQ0ljmzhmfZYrH9fflS22i/PQEvsPvxCwxgz5q7UB8K1JO4Q==}
 
   data-urls@5.0.0:
     resolution: {integrity: sha512-ZYP5VBHshaDAiVZxjbRVcFJpc+4xGgT0bK3vzy1HLN8jTO975HEbuYzZJcHoQEY5K1a0z8YayJkyVETa08eNTg==}
@@ -3320,10 +3364,6 @@ packages:
   js-yaml@4.1.1:
     resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
     hasBin: true
-
-  jschardet@3.1.4:
-    resolution: {integrity: sha512-/kmVISmrwVwtyYU40iQUOp3SUPk2dhNCMsZBQX0R1/jZ8maaXJ/oZIzUOiyOqcgtLnETFKYChbJ5iDC/eWmFHg==}
-    engines: {node: '>=0.1.90'}
 
   jsdom@26.1.0:
     resolution: {integrity: sha512-Cvc9WUhxSMEo4McES3P7oK3QaXldCfNWp7pl2NNeiIFlCoLr3kfq9kb1fxftiwk1FLV7CvpvDfonxtzUDeSOPg==}
@@ -4683,7 +4723,7 @@ snapshots:
       outdent: 0.5.0
       prettier: 2.8.8
       resolve-from: 5.0.0
-      semver: 7.7.4
+      semver: 7.8.5
 
   '@changesets/assemble-release-plan@6.0.9':
     dependencies:
@@ -4692,7 +4732,7 @@ snapshots:
       '@changesets/should-skip-package': 0.1.2
       '@changesets/types': 6.1.0
       '@manypkg/get-packages': 1.1.3
-      semver: 7.7.4
+      semver: 7.8.5
 
   '@changesets/changelog-git@0.2.1':
     dependencies:
@@ -4750,7 +4790,7 @@ snapshots:
       '@changesets/types': 6.1.0
       '@manypkg/get-packages': 1.1.3
       picocolors: 1.1.1
-      semver: 7.7.4
+      semver: 7.8.5
 
   '@changesets/get-release-plan@4.0.14':
     dependencies:
@@ -5099,50 +5139,33 @@ snapshots:
 
   '@firela/api-types@0.0.0-canary.0ba0185': {}
 
-  '@firela/parser-cn@0.1.2(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)':
-    dependencies:
-      '@firela/parser-core': 0.1.1(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)
-      '@swc/helpers': 0.5.19
-      chrono-node: 2.9.0
-      csv-parse: 5.6.0
-      decimal.js: 10.6.0
-      iconv-lite: 0.6.3
-      jschardet: 3.1.4
-      tslib: 2.8.1
+  '@firela/cn-alipay-mobile@0.1.11': {}
 
-  '@firela/parser-core@0.1.1(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)':
-    dependencies:
-      '@swc/helpers': 0.5.19
-      chrono-node: 2.9.0
-      csv-parse: 5.6.0
-      decimal.js: 10.6.0
-      iconv-lite: 0.6.3
-      jschardet: 3.1.4
-      tslib: 2.8.1
+  '@firela/cn-alipay-yuebao@0.1.11': {}
 
-  '@firela/parser-eu@0.1.1(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)':
-    dependencies:
-      '@firela/parser-core': 0.1.1(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)
-      '@swc/helpers': 0.5.19
-      chrono-node: 2.9.0
-      csv-parse: 5.6.0
-      decimal.js: 10.6.0
-      tslib: 2.8.1
-    transitivePeerDependencies:
-      - iconv-lite
-      - jschardet
+  '@firela/cn-alipay@0.1.11': {}
 
-  '@firela/parser-hk@0.1.1(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)':
-    dependencies:
-      '@firela/parser-core': 0.1.1(chrono-node@2.9.0)(csv-parse@5.6.0)(iconv-lite@0.6.3)(jschardet@3.1.4)
-      '@swc/helpers': 0.5.19
-      chrono-node: 2.9.0
-      csv-parse: 5.6.0
-      decimal.js: 10.6.0
-      tslib: 2.8.1
-    transitivePeerDependencies:
-      - iconv-lite
-      - jschardet
+  '@firela/cn-boc-credit@0.1.11': {}
+
+  '@firela/cn-ccb-debit@0.1.11': {}
+
+  '@firela/cn-cmbc-credit@0.1.11': {}
+
+  '@firela/cn-icbc-credit@0.1.11': {}
+
+  '@firela/cn-wechat-xlsx@0.1.11': {}
+
+  '@firela/cn-wechat@0.1.11': {}
+
+  '@firela/eu-degiro@0.1.11': {}
+
+  '@firela/eu-deutsche-bank@0.1.11': {}
+
+  '@firela/eu-interactive-brokers@0.1.11': {}
+
+  '@firela/hk-hsbc-credit@0.1.11': {}
+
+  '@firela/hk-hsbc-debit@0.1.11': {}
 
   '@floating-ui/core@1.7.5':
     dependencies:
@@ -6383,10 +6406,6 @@ snapshots:
 
   '@standard-schema/utils@0.3.0': {}
 
-  '@swc/helpers@0.5.19':
-    dependencies:
-      tslib: 2.8.1
-
   '@testing-library/dom@10.4.1':
     dependencies:
       '@babel/code-frame': 7.29.0
@@ -6778,8 +6797,6 @@ snapshots:
   chownr@1.1.4:
     optional: true
 
-  chrono-node@2.9.0: {}
-
   ci-info@3.9.0: {}
 
   class-variance-authority@0.7.1:
@@ -6859,8 +6876,6 @@ snapshots:
       rrweb-cssom: 0.8.0
 
   csstype@3.2.3: {}
-
-  csv-parse@5.6.0: {}
 
   data-urls@5.0.0:
     dependencies:
@@ -7416,8 +7431,6 @@ snapshots:
     dependencies:
       argparse: 2.0.1
 
-  jschardet@3.1.4: {}
-
   jsdom@26.1.0:
     dependencies:
       cssstyle: 4.6.0
@@ -7512,7 +7525,7 @@ snapshots:
 
   make-dir@4.0.0:
     dependencies:
-      semver: 7.7.4
+      semver: 7.8.5
 
   marked@17.0.4: {}
 
@@ -7698,7 +7711,7 @@ snapshots:
       ky: 1.14.3
       registry-auth-token: 5.1.1
       registry-url: 6.0.1
-      semver: 7.7.4
+      semver: 7.8.5
 
   package-manager-detector@0.2.11:
     dependencies:

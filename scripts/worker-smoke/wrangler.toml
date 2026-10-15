@@ -1,0 +1,5 @@
+name = "billclaw-worker-smoke"
+main = "index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat_v2"]
+# Never deployed: local dry-run/dev only (bot#44 AC1 evidence)

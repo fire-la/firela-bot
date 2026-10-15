@@ -1,0 +1,121 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2026-02-01",
+      "amount": "3500.00",
+      "currency": "EUR",
+      "description": "Credit - ACME CORPORATION - SALARY JANUARY 2026",
+      "payee": "ACME CORPORATION",
+      "metadata": {
+        "transactionType": "Credit"
+      }
+    },
+    {
+      "date": "2026-02-02",
+      "amount": "-45.67",
+      "currency": "EUR",
+      "description": "Card Payment - REWE SAGT DANKE - BERLIN",
+      "payee": "REWE SAGT DANKE",
+      "metadata": {
+        "transactionType": "Card Payment",
+        "bic": "DEUTDEFF"
+      }
+    },
+    {
+      "date": "2026-02-03",
+      "amount": "-39.95",
+      "currency": "EUR",
+      "description": "Direct Debit - TELEKOM DEUTSCHLAND - INTERNET FLAT RATE",
+      "payee": "TELEKOM DEUTSCHLAND",
+      "metadata": {
+        "transactionType": "Direct Debit",
+        "iban": "DE89370400440532013000",
+        "bic": "COBADEFFXXX",
+        "customerReference": "REF-2026-001"
+      }
+    },
+    {
+      "date": "2026-02-04",
+      "amount": "850.00",
+      "currency": "EUR",
+      "description": "Standing Order - VERMIETER KG - RENT FEBRUARY 2026",
+      "payee": "VERMIETER KG",
+      "metadata": {
+        "transactionType": "Standing Order",
+        "iban": "DE12500105170648489808",
+        "bic": "BELADEBEXXX",
+        "customerReference": "SO-RENT"
+      }
+    },
+    {
+      "date": "2026-02-05",
+      "amount": "-32.50",
+      "currency": "EUR",
+      "description": "Transfer - JOHN DOE - REIMBURSEMENT DINNER",
+      "payee": "JOHN DOE",
+      "metadata": {
+        "transactionType": "Transfer",
+        "iban": "DE98765432101234567890",
+        "bic": "DEUTDEFF",
+        "customerReference": "TRF-001"
+      }
+    },
+    {
+      "date": "2026-02-06",
+      "amount": "-3.45",
+      "currency": "EUR",
+      "description": "Card Payment - STARBUCKS COFFEE - COFFEE TO GO",
+      "payee": "STARBUCKS COFFEE",
+      "metadata": {
+        "transactionType": "Card Payment"
+      }
+    },
+    {
+      "date": "2026-02-07",
+      "amount": "-9.99",
+      "currency": "EUR",
+      "description": "Direct Debit - SPOTIFY AB - PREMIUM SUBSCRIPTION",
+      "payee": "SPOTIFY AB",
+      "metadata": {
+        "transactionType": "Direct Debit",
+        "iban": "IE12BOFI90000112345678",
+        "bic": "BOFIIE2D",
+        "customerReference": "SPOT-2026"
+      }
+    },
+    {
+      "date": "2026-02-08",
+      "amount": "-150.00",
+      "currency": "EUR",
+      "description": "Transfer - ALICE SMITH",
+      "payee": "ALICE SMITH",
+      "metadata": {
+        "transactionType": "Transfer",
+        "iban": "DE11112222333344445555",
+        "bic": "GENODEF1BER",
+        "customerReference": "TRF-002"
+      }
+    },
+    {
+      "date": "2026-02-09",
+      "amount": "-89.99",
+      "currency": "EUR",
+      "description": "Card Payment - AMAZON.DE - ORDER #123-4567890",
+      "payee": "AMAZON.DE",
+      "metadata": {
+        "transactionType": "Card Payment"
+      }
+    },
+    {
+      "date": "2026-02-10",
+      "amount": "-5.90",
+      "currency": "EUR",
+      "description": "Fee - DEUTSCHE BANK - ACCOUNT MAINTENANCE FEE",
+      "payee": "DEUTSCHE BANK",
+      "metadata": {
+        "transactionType": "Fee"
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+Trades
+Header
+ClientAccountID,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,C. Price,Proceeds,Comm/Fee,Basis,Realized P/L,MTM P/L,Code
+U1234567,STK,USD,AAPL,20240215;093000,100,185.50,186.00,18550.00,-1.00,0,0,0,O
+U1234567,STK,USD,MSFT,20240216;101500,-50,378.25,378.50,-18912.50,-0.50,0,0,0,C
+
+Cash Transactions
+Header
+ClientAccountID,Currency,Date/Time,Amount,Type,Description,Symbol,Code
+U1234567,USD,20240220,500.00,Dividends,Apple Inc,AAPL,
+U1234567,USD,20240221,-25.00,Other Fees,Account Maintenance,,
