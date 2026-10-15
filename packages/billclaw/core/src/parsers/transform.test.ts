@@ -5,6 +5,9 @@
  */
 
 import { describe, it, expect } from "vitest"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+import { dirname, join } from "node:path"
 import {
   transformParsedTransactions,
   transformParsedBillTransactions,
@@ -78,6 +81,93 @@ describe("transformParsedTransactions (plaid leg, EU/HK)", () => {
     )
     expect(row.pending).toBe(true)
   })
+
+  describe("id strategy (bot#51)", () => {
+    it("uses the crate serial when present (orderId first, reference fallback)", () => {
+      const [orderRow] = transformParsedTransactions(
+        [createMockTransaction({ metadata: { orderId: "ORD001", reference: "12345" } })],
+        defaultOptions,
+      )
+      expect(orderRow.transaction_id).toBe("ORD001")
+
+      const [referenceRow] = transformParsedTransactions(
+        [createMockTransaction({ metadata: { reference: "12347" } })],
+        defaultOptions,
+      )
+      expect(referenceRow.transaction_id).toBe("12347")
+    })
+
+    it("ignores empty-string serials (IB trade rows emit them) and falls back to the composite", () => {
+      const [row] = transformParsedTransactions(
+        [createMockTransaction({ metadata: { ibOrderId: "", orderId: "" } })],
+        defaultOptions,
+      )
+      expect(row.transaction_id).toBe(
+        "2024-03-15|-88.50|CNY|Test transaction description#1",
+      )
+    })
+
+    it("gives distinct ids to identical same-day rows via the occurrence index", () => {
+      const rows = transformParsedTransactions(
+        [
+          createMockTransaction({ metadata: undefined }),
+          createMockTransaction({ metadata: undefined }),
+        ],
+        defaultOptions,
+      )
+
+      expect(rows[0].transaction_id).not.toBe(rows[1].transaction_id)
+      expect(rows[0].transaction_id).toBe(
+        "2024-03-15|-88.50|CNY|Test transaction description#1",
+      )
+      expect(rows[1].transaction_id).toBe(
+        "2024-03-15|-88.50|CNY|Test transaction description#2",
+      )
+    })
+
+    it("produces stable ids across re-transforms of the same rows (re-import dedup)", () => {
+      const txns = [
+        createMockTransaction({ metadata: { orderId: "ORD001" } }),
+        createMockTransaction({ metadata: {} }),
+        createMockTransaction({ metadata: {} }),
+      ]
+      const ids = (rows: CrateTransaction[]) =>
+        transformParsedTransactions(rows, defaultOptions).map((r) => r.transaction_id)
+
+      expect(ids(txns)).toEqual(ids(txns))
+    })
+  })
+})
+
+describe("transformParsedTransactions over vendored EU/HK goldens (bot#51)", () => {
+  const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures")
+
+  const GOLDEN_MATRIX: Array<{ crate: string; golden: string }> = [
+    { crate: "eu-degiro", golden: "expected.json" },
+    { crate: "eu-interactive-brokers", golden: "expected.json" },
+    { crate: "eu-deutsche-bank", golden: "expected-de.json" },
+    { crate: "eu-deutsche-bank", golden: "expected-en.json" },
+    { crate: "hk-hsbc-credit", golden: "expected.json" },
+    { crate: "hk-hsbc-debit", golden: "expected.json" },
+  ]
+
+  for (const { crate, golden } of GOLDEN_MATRIX) {
+    it(`${crate}/${golden}: re-transforming yields identical transaction_ids (AC2, re-import dedup)`, () => {
+      const parsed = JSON.parse(
+        readFileSync(join(fixturesDir, crate, golden), "utf-8"),
+      ) as { data: CrateTransaction[] }
+      const options: TransformOptions = { accountId: "golden-account", pending: false }
+      const ids = (rows: CrateTransaction[]) =>
+        transformParsedTransactions(rows, options).map((r) => r.transaction_id)
+
+      expect(parsed.data.length).toBeGreaterThan(0)
+      const first = ids(parsed.data)
+      expect(first).toEqual(ids(parsed.data))
+      // Re-import dedup safety property: ids are unique within the file
+      // (a shared serial would silently drop rows on the server side).
+      expect(new Set(first).size).toBe(first.length)
+    })
+  }
 })
 
 describe("transformParsedBillTransactions (CN leg, bot#45)", () => {

@@ -16,7 +16,6 @@
 
 import type { PlaidTransactionUpload, ParsedBillTransactionUpload } from '../upload/vlt-client.js';
 import type { RawTransaction as CrateTransaction } from '@firela/cn-alipay';
-import { randomUUID } from 'crypto';
 
 export type { CrateTransaction };
 
@@ -32,26 +31,35 @@ export interface TransformOptions {
 
 /**
  * Transform crate output to Plaid format for VLT upload (EU/HK parsers).
+ *
+ * `transaction_id` is deterministic (bot#51): the crate serial when
+ * present, else the composite described on rowIdFactory — re-importing
+ * the same file yields identical ids so vlt's (userId, importId) dedup
+ * holds. Files imported before bot#51 hold random UUIDs and will not
+ * dedup against the new ids (same class of transition as bot#45).
  */
 export function transformParsedTransactions(
   transactions: CrateTransaction[],
   options: TransformOptions,
 ): PlaidTransactionUpload[] {
-  return transactions.map((txn): PlaidTransactionUpload => ({
-    // No crate emits metadata.id (the TS-era read was already dead: the TS
-    // degiro parser emitted orderId, not id) — stable crate-serial ids for
-    // the plaid leg are tracked as a bot#44 follow-up issue.
-    transaction_id: txn.metadata?.id?.toString() || randomUUID(),
-    amount: Number(txn.amount),
-    iso_currency_code: txn.currency,
-    date: txn.date,
-    merchant_name: txn.payee,
-    name: txn.description || txn.payee || '',
-    pending: options.pending ?? false,
-    account_id: options.accountId,
-    category: undefined,
-    payment_channel: undefined,
-  }));
+  const nextRowId = rowIdFactory(PLAID_SERIAL_KEYS);
+
+  return transactions.map((txn): PlaidTransactionUpload => {
+    const description = txn.description || txn.payee || '';
+
+    return {
+      transaction_id: nextRowId(txn, description),
+      amount: Number(txn.amount),
+      iso_currency_code: txn.currency,
+      date: txn.date,
+      merchant_name: txn.payee,
+      name: description,
+      pending: options.pending ?? false,
+      account_id: options.accountId,
+      category: undefined,
+      payment_channel: undefined,
+    };
+  });
 }
 
 /**
@@ -70,27 +78,50 @@ function fundingSourceFromMetadata(
 }
 
 /**
- * Build the dedup `id` for a parsed-bill row.
+ * Serial metadata keys per leg, first non-empty string wins.
  *
- * Preferred source: the crate's native transaction serial
- * (`metadata.orderNo` — alipay web/mobile and wechat emit it). cmbc/ccb/boc/
- * icbc rows carry no serial, so they fall back to a deterministic
- * `date|amount|currency|description #occurrence` composite: vlt hashes the
- * bare tuple when `id` is absent, and two legitimately distinct same-day
- * transactions with an identical tuple would collide on vlt's
- * (userId, importId) unique constraint. The occurrence index keeps
- * identical rows distinct while staying stable across re-imports of the
- * same file (tuple keys use the raw decimal string — exact, no float
- * formatting variance).
+ * CN leg (bot#45): `orderNo` (alipay web/mobile/yuebao, wechat).
+ * Plaid leg (bot#51): `orderNo` takes precedence (crate-surface parity
+ * with the CN leg's canonical serial — no EU/HK crate emits it today),
+ * then `orderId`/`reference` (degiro), then `ibOrderId` (IB — emitted as
+ * empty strings on trade rows, hence the non-empty guard).
+ * deutsche-bank `customerReference` is deliberately excluded: it repeats
+ * across months on standing orders (e.g. "SO-RENT") and would dedup away
+ * legitimate transactions.
  */
-function parsedBillId(
-  txn: CrateTransaction,
-  tupleKey: string,
-  occurrence: number,
-): string {
-  const orderNo = txn.metadata?.orderNo;
-  if (typeof orderNo === 'string' && orderNo !== '') return orderNo;
-  return `${tupleKey}#${occurrence}`;
+const CN_SERIAL_KEYS = ['orderNo'] as const;
+const PLAID_SERIAL_KEYS = ['orderNo', 'orderId', 'reference', 'ibOrderId'] as const;
+
+/**
+ * Per-import dedup-id builder, shared by both upload legs (bot#45 CN,
+ * bot#51 plaid).
+ *
+ * Preferred id: the crate's native transaction serial (the leg's
+ * serialKeys above). Rows without a serial (cmbc/ccb/boc/icbc, IB cash
+ * rows, deutsche-bank, HSBC) fall back to a deterministic
+ * `date|amount|currency|description #occurrence` composite: two
+ * legitimately distinct same-day transactions with an identical tuple
+ * would collide on vlt's (userId, importId) unique constraint. The
+ * occurrence index keeps identical rows distinct while staying stable
+ * across re-imports of the same file (tuple keys use the raw decimal
+ * string — exact, no float formatting variance). One factory per
+ * transform call: the occurrence counter is scoped to one file.
+ */
+function rowIdFactory(serialKeys: readonly string[]) {
+  // Occurrence counter per identical tuple, for the no-serial id fallback.
+  const tupleCounts = new Map<string, number>();
+
+  return (txn: CrateTransaction, description: string): string => {
+    const tupleKey = `${txn.date}|${txn.amount}|${txn.currency}|${description}`;
+    const occurrence = (tupleCounts.get(tupleKey) ?? 0) + 1;
+    tupleCounts.set(tupleKey, occurrence);
+
+    for (const key of serialKeys) {
+      const serial = txn.metadata?.[key];
+      if (typeof serial === 'string' && serial !== '') return serial;
+    }
+    return `${tupleKey}#${occurrence}`;
+  };
 }
 
 /**
@@ -104,8 +135,7 @@ function parsedBillId(
 export function transformParsedBillTransactions(
   transactions: CrateTransaction[],
 ): ParsedBillTransactionUpload[] {
-  // Occurrence counter per identical tuple, for the no-serial id fallback.
-  const tupleCounts = new Map<string, number>();
+  const nextRowId = rowIdFactory(CN_SERIAL_KEYS);
 
   return transactions.map((txn): ParsedBillTransactionUpload => {
     const description = txn.description || txn.payee || '';
@@ -113,14 +143,10 @@ export function transformParsedBillTransactions(
     // amounts to the crate's raw decimal string — a serial-less file first
     // imported under the TS parsers and re-imported after this change gets
     // new fallback ids (documented in the PR; orderNo rows are unaffected).
-    const tupleKey = `${txn.date}|${txn.amount}|${txn.currency}|${description}`;
-    const occurrence = (tupleCounts.get(tupleKey) ?? 0) + 1;
-    tupleCounts.set(tupleKey, occurrence);
-
     const fundingSource = fundingSourceFromMetadata(txn.metadata);
 
     return {
-      id: parsedBillId(txn, tupleKey, occurrence),
+      id: nextRowId(txn, description),
       date: txn.date,
       amount: Number(txn.amount),
       currency: txn.currency,
