@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies [afb560b]
+  - @firela/billclaw-core@0.7.1
+
 ## 0.7.0
 
 ### Minor Changes

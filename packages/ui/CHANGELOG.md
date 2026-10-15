@@ -1,5 +1,12 @@
 # @firela/billclaw-ui
 
+## 0.0.7
+
+### Patch Changes
+
+- Updated dependencies [afb560b]
+  - @firela/billclaw-core@0.7.1
+
 ## 0.0.6
 
 ### Patch Changes
