@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0
+
+### Minor Changes
+
+- 13c6911: feat(parsers): migrate the parser registry to the @firela/_ wasm crates (fire-la/firela-bot#44, the parser single-track ruling's last consumer migration). The deprecated TS @firela/parser-_ packages leave the dependency graph (pinned exact 0.1.11 crate fleet instead) and billclaw-core parses through the firela-sdk Rust->WASM crates with new coverage: alipay yuebao, wechat CSV/XLSX, BOC/ICBC credit (HTML), deutsche-bank, and HSBC split into credit/debit. Breaking surface: parser APIs moved from the root entry to the new `@firela/billclaw-core/parsers` subpath (keeps the wasm crates out of the CF worker bundle); `ParserName` values are now crate names (legacy `--parser` names still work via aliases, except `hsbc-hk` which now asks you to pick credit or debit); `detect`/`parse` are async; `toBillDateString` removed (crate dates are strings — the timezone hazard is structurally gone); the parsed-bill fundingSource reads `metadata.paymentMethod` only (TS-era `method` bridge retired); transaction metadata is the flattened crate shape (no customFields). Behavior notes: EU/HK plaid-leg rows keep their pre-existing randomUUID ids (deterministic serial ids are a planned follow-up), and serial-less CN rows re-imported across this change get new fallback ids. The four debit-card PDFs, legacy .xls, and GBK HTML formats remain adjudicated backend-unsupported and fail honestly as undetectable. NOTICE now attributes the 14 crates under the AGPL/Commercial dual license (npm metadata fix tracked on the firela-sdk issue).
+
+### Patch Changes
+
+- Updated dependencies [13c6911]
+  - @firela/billclaw-core@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes
