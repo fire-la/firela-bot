@@ -11,6 +11,10 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./parsers": {
+      "types": "./dist/parsers/index.d.ts",
+      "import": "./dist/parsers/index.js"
+    },
     "./storage": {
       "types": "./dist/storage/index.d.ts",
       "import": "./dist/storage/index.js"
@@ -97,11 +101,20 @@
   },
   "dependencies": {
     "@firela/api-types": "0.0.0-canary.0ba0185",
-    "@firela/parser-cn": "^0.1.2",
-    "@firela/parser-core": "^0.1.1",
-    "@firela/parser-eu": "^0.1.1",
-    "@firela/parser-hk": "^0.1.1",
-    "iconv-lite": "0.6.3",
+    "@firela/cn-alipay": "0.1.11",
+    "@firela/cn-alipay-mobile": "0.1.11",
+    "@firela/cn-alipay-yuebao": "0.1.11",
+    "@firela/cn-boc-credit": "0.1.11",
+    "@firela/cn-ccb-debit": "0.1.11",
+    "@firela/cn-cmbc-credit": "0.1.11",
+    "@firela/cn-icbc-credit": "0.1.11",
+    "@firela/cn-wechat": "0.1.11",
+    "@firela/cn-wechat-xlsx": "0.1.11",
+    "@firela/eu-degiro": "0.1.11",
+    "@firela/eu-deutsche-bank": "0.1.11",
+    "@firela/eu-interactive-brokers": "0.1.11",
+    "@firela/hk-hsbc-credit": "0.1.11",
+    "@firela/hk-hsbc-debit": "0.1.11",
     "jose": "^6.1.3",
     "plaid": "^32.0.0",
     "proper-lockfile": "^4.1.2",

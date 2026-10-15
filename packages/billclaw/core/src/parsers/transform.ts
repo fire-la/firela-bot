@@ -1,20 +1,27 @@
 /**
- * Transform utility for converting parsed transactions to upload formats.
+ * Transform utilities converting wasm-crate parse output to upload formats.
  *
- * Converts RawTransaction from @firela/parser-* to PlaidTransactionUpload
- * (non-CN parsers, plaid/sync transport) or ParsedBillTransactionUpload
- * (CN parsers, parsed-bill/sync transport — fire-la/firela-bot#45) format
- * for VLT backend upload.
+ * Input is the crate-native wire shape (RawTransaction from
+ * '@firela/cn-alipay' — one shared surface for all crates, see
+ * types/firela-wasm.d.ts): dates are "YYYY-MM-DD" strings (the bill's stated
+ * calendar date — no Date construction, so the bot#46 timezone hazard is
+ * structurally gone) and amounts are exact decimal strings.
+ *
+ * Two output legs (bot#45 ruling): ParsedBillTransactionUpload for CN
+ * parsers (parsed-bill/sync transport) and PlaidTransactionUpload for
+ * EU/HK parsers (legacy plaid/sync transport).
  *
  * @module @firela/billclaw-core/parsers
  */
 
 import type { PlaidTransactionUpload, ParsedBillTransactionUpload } from '../upload/vlt-client.js';
-import type { RawTransaction } from '@firela/parser-core';
+import type { RawTransaction as CrateTransaction } from '@firela/cn-alipay';
 import { randomUUID } from 'crypto';
 
+export type { CrateTransaction };
+
 /**
- * Transform options.
+ * Transform options for the plaid leg.
  */
 export interface TransformOptions {
   /** Target account ID for transactions */
@@ -24,21 +31,20 @@ export interface TransformOptions {
 }
 
 /**
- * Transform parsed transactions to Plaid format for VLT upload.
- *
- * @param transactions - Array of raw transactions from parser
- * @param options - Transform options (accountId, pending status)
- * @returns Array of PlaidTransactionUpload objects
+ * Transform crate output to Plaid format for VLT upload (EU/HK parsers).
  */
 export function transformParsedTransactions(
-  transactions: RawTransaction<unknown>[],
+  transactions: CrateTransaction[],
   options: TransformOptions,
 ): PlaidTransactionUpload[] {
   return transactions.map((txn): PlaidTransactionUpload => ({
+    // No crate emits metadata.id (the TS-era read was already dead: the TS
+    // degiro parser emitted orderId, not id) — stable crate-serial ids for
+    // the plaid leg are tracked as a bot#44 follow-up issue.
     transaction_id: txn.metadata?.id?.toString() || randomUUID(),
-    amount: txn.amount.toNumber(),
+    amount: Number(txn.amount),
     iso_currency_code: txn.currency,
-    date: toBillDateString(txn.date),
+    date: txn.date,
     merchant_name: txn.payee,
     name: txn.description || txn.payee || '',
     pending: options.pending ?? false,
@@ -49,81 +55,65 @@ export function transformParsedTransactions(
 }
 
 /**
- * Extract the per-row payment-method token from parser metadata, verbatim.
+ * Extract the per-row payment-method token from crate metadata, verbatim.
  *
- * The pinned TS @firela/parser-cn@0.1.2 emits the key `method`; the wasm
- * crates (bot#44 migration) emit `paymentMethod` per the sdk rename in
- * vlt#1922. Both are bridged here — the token is forwarded raw with NO
- * client-side normalization (ADR-0130 v2 decision 7: normalization is
- * single-sided in vlt).
+ * Crates emit the key `paymentMethod` (the vlt#1922 sdk-leg rename; the TS
+ * fleet's `method` key retired with it in bot#44). The token is forwarded
+ * raw with NO client-side normalization (ADR-0130 v2 decision 7:
+ * normalization is single-sided in vlt).
  */
 function fundingSourceFromMetadata(
   metadata: Record<string, unknown> | undefined,
 ): string | undefined {
-  // Strict-validity-first over the two keys: a non-string `paymentMethod`
-  // (e.g. a malformed future-crate value) must not shadow a valid `method`.
-  const candidates = [metadata?.paymentMethod, metadata?.method];
-  return candidates.find((c): c is string => typeof c === 'string' && c !== '');
+  const token = metadata?.paymentMethod;
+  return typeof token === 'string' && token !== '' ? token : undefined;
 }
 
 /**
  * Build the dedup `id` for a parsed-bill row.
  *
- * Preferred source: the parser's native transaction serial
- * (`customFields.orderNo` — alipay web/mobile both emit it). Bank parsers
- * (cmbc-credit / ccb-debit) have no serial, so rows fall back to a
- * deterministic `date|amount|currency|description #occurrence` composite:
- * vlt hashes the bare tuple when `id` is absent, and two legitimately
- * distinct same-day transactions with an identical tuple (e.g. two subway
- * fares) would collide on vlt's (userId, importId) unique constraint. The
- * occurrence index keeps identical rows distinct while staying stable across
- * re-imports of the same file.
+ * Preferred source: the crate's native transaction serial
+ * (`metadata.orderNo` — alipay web/mobile and wechat emit it). cmbc/ccb/boc/
+ * icbc rows carry no serial, so they fall back to a deterministic
+ * `date|amount|currency|description #occurrence` composite: vlt hashes the
+ * bare tuple when `id` is absent, and two legitimately distinct same-day
+ * transactions with an identical tuple would collide on vlt's
+ * (userId, importId) unique constraint. The occurrence index keeps
+ * identical rows distinct while staying stable across re-imports of the
+ * same file (tuple keys use the raw decimal string — exact, no float
+ * formatting variance).
  */
 function parsedBillId(
-  txn: RawTransaction<unknown>,
+  txn: CrateTransaction,
   tupleKey: string,
   occurrence: number,
 ): string {
-  const orderNo = (txn.customFields as Record<string, unknown> | undefined)?.orderNo;
+  const orderNo = txn.metadata?.orderNo;
   if (typeof orderNo === 'string' && orderNo !== '') return orderNo;
   return `${tupleKey}#${occurrence}`;
 }
 
 /**
- * Render a parser Date as the bill's stated calendar date (YYYY-MM-DD).
- * Shared by both upload transports (plaid leg #46, parsed-bill leg #45).
+ * Transform crate output to parsed-bill format for VLT upload
+ * (CN parsers — bot#45, ADR-0130 v2 decision 7).
  *
- * All pinned parsers construct dates with the bill's Y/M/D as LOCAL
- * components (`new Date(year, month, day)`), so the date must be read back
- * through local components too — `toISOString()` renders UTC and shifts the
- * date one day early on runtimes east of UTC (e.g. UTC+8, where CN bills
- * originate). Local round-trip is stable in any runtime timezone.
- */
-export function toBillDateString(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${date.getFullYear()}-${month}-${day}`;
-}
-
-/**
- * Transform parsed transactions to parsed-bill format for VLT upload
- * (CN parsers — fire-la/firela-bot#45, ADR-0130 v2 decision 7).
- *
- * Amount passes through with the parser's IGN sign convention (positive =
- * income): vlt's parsed-bill adapter does NOT negate, unlike the plaid
- * adapter used by the legacy CN transport.
+ * Amount converts from the crate's exact decimal string to a number (the
+ * wire field's type); sign convention is the crate/IGN convention
+ * (positive = income), passed through verbatim.
  */
 export function transformParsedBillTransactions(
-  transactions: RawTransaction<unknown>[],
+  transactions: CrateTransaction[],
 ): ParsedBillTransactionUpload[] {
   // Occurrence counter per identical tuple, for the no-serial id fallback.
   const tupleCounts = new Map<string, number>();
 
   return transactions.map((txn): ParsedBillTransactionUpload => {
-    const date = toBillDateString(txn.date);
-    const amount = txn.amount.toNumber();
     const description = txn.description || txn.payee || '';
-    const tupleKey = `${date}|${amount}|${txn.currency}|${description}`;
+    // NOTE(bot#44 migration): tuple keys switched from float-rendered
+    // amounts to the crate's raw decimal string — a serial-less file first
+    // imported under the TS parsers and re-imported after this change gets
+    // new fallback ids (documented in the PR; orderNo rows are unaffected).
+    const tupleKey = `${txn.date}|${txn.amount}|${txn.currency}|${description}`;
     const occurrence = (tupleCounts.get(tupleKey) ?? 0) + 1;
     tupleCounts.set(tupleKey, occurrence);
 
@@ -131,8 +121,8 @@ export function transformParsedBillTransactions(
 
     return {
       id: parsedBillId(txn, tupleKey, occurrence),
-      date,
-      amount,
+      date: txn.date,
+      amount: Number(txn.amount),
       currency: txn.currency,
       description,
       ...(txn.payee ? { payee: txn.payee } : {}),

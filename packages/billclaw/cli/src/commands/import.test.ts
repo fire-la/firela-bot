@@ -12,6 +12,7 @@ vi.mock("node:fs")
 vi.mock("../utils/progress.js")
 vi.mock("../utils/format.js")
 vi.mock("@firela/billclaw-core")
+vi.mock("@firela/billclaw-core/parsers")
 
 describe("importCommand", () => {
   describe("command definition", () => {

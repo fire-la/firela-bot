@@ -11,11 +11,11 @@ import { success } from "../utils/format.js"
 import {
   parserRegistry,
   PARSER_PLATFORM_CANONICAL,
-  type ParserName,
+  resolveParserName,
   transformParsedTransactions,
   transformParsedBillTransactions,
-  toBillDateString,
-} from "@firela/billclaw-core"
+  type ParserName,
+} from "@firela/billclaw-core/parsers"
 import {
   uploadTransactions,
   uploadParsedBillTransactions,
@@ -39,7 +39,6 @@ async function runImport(
   },
 ): Promise<void> {
   const filePath = args.file
-  const parserName = args.parser as ParserName | undefined
   const accountId = args.account
   const dryRun = args.dryRun ?? false
 
@@ -55,6 +54,19 @@ async function runImport(
     return
   }
 
+  // Validate a requested parser up front (accepts legacy aliases) — an
+  // invalid name gets a friendly error listing the choices instead of an
+  // unhandled cast crash later.
+  let requestedParser: ParserName | undefined
+  if (args.parser) {
+    try {
+      requestedParser = resolveParserName(args.parser)
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`)
+      return
+    }
+  }
+
   const spinner = new Spinner({ text: "Reading file..." }).start()
 
   // Read file content
@@ -67,12 +79,12 @@ async function runImport(
   }
 
   // Auto-detect parser if not specified
-  let detectedParserName: ParserName | null = parserName ?? null
+  let detectedParserName: ParserName | null = requestedParser ?? null
   if (!detectedParserName) {
     spinner.update("Detecting file format...")
-    detectedParserName = parserRegistry.detect(content)
+    detectedParserName = await parserRegistry.detect(content)
     if (!detectedParserName) {
-      spinner.fail("Could not detect CSV format")
+      spinner.fail("Could not detect file format")
       console.error("")
       console.error("Available parsers:")
       for (const name of parserRegistry.list()) {
@@ -86,16 +98,24 @@ async function runImport(
 
   spinner.update(`Parsing with ${detectedParserName}...`)
 
-  // Get parser and parse file
+  // Get parser and parse file. parse() can REJECT (the wasm loaders reject
+  // stickily when instantiation fails) — fail friendly like the errors above
+  // instead of an unhandled rejection with a dangling spinner.
   const parser = parserRegistry.get(detectedParserName)
-  const result = parser.parse(content)
+  let result: Awaited<ReturnType<typeof parser.parse>>
+  try {
+    result = await parser.parse(content)
+  } catch (err) {
+    spinner.fail(`Parser ${detectedParserName} failed to load or run: ${(err as Error).message}`)
+    return
+  }
 
   if (!result.success) {
     spinner.fail("Parse failed")
     console.error("")
     console.error("Errors:")
     for (const error of result.errors) {
-      console.error(`  - ${error.type}: ${error.message}`)
+      console.error(`  - ${error.code}: ${error.message}`)
     }
     return
   }
@@ -109,7 +129,7 @@ async function runImport(
     console.log("")
     console.log("Sample raw transactions:")
     for (const txn of result.data.slice(0, 3)) {
-      console.log(`  - ${toBillDateString(txn.date)}: ${txn.payee} (${txn.amount} ${txn.currency})`)
+      console.log(`  - ${txn.date}: ${txn.payee} (${txn.amount} ${txn.currency})`)
     }
     if (result.data.length > 3) {
       console.log(`  ... and ${result.data.length - 3} more`)
@@ -127,25 +147,27 @@ async function runImport(
     return
   }
 
-  // CN parsers converge to the parsed-bill transport (#45); others keep the
-  // plaid transport. The transport is keyed off the platform-canonical table
-  // — a parser present there is by definition a CN bill parser. The
-  // discriminated payload keeps the row shape and transport paired at
-  // compile time.
-  const platform = PARSER_PLATFORM_CANONICAL[detectedParserName]
-  const payload: ImportPayload = platform
-    ? {
-        transport: "parsed-bill",
-        platform,
-        rows: transformParsedBillTransactions(result.data),
-      }
-    : {
-        transport: "plaid",
-        rows: transformParsedTransactions(result.data, {
-          accountId: accountId,
-          pending: false,
-        }),
-      }
+  // CN parsers ride the parsed-bill transport (#45); EU/HK keep the plaid
+  // transport. The transport comes from the REGISTRY entry — platform
+  // presence is NOT the discriminator (4 of 5 non-CN crates also carry a
+  // platform canonical; eu-degiro deliberately does not). Every CN parser
+  // has a platform canonical (pinned by registry.test's exhaustive test), so
+  // the lookup is total on the parsed-bill branch.
+  const transport = parserRegistry.transport(detectedParserName)
+  const payload: ImportPayload =
+    transport === "parsed-bill"
+      ? {
+          transport,
+          platform: PARSER_PLATFORM_CANONICAL[detectedParserName]!,
+          rows: transformParsedBillTransactions(result.data),
+        }
+      : {
+          transport,
+          rows: transformParsedTransactions(result.data, {
+            accountId: accountId,
+            pending: false,
+          }),
+        }
 
   console.log(`Transformed ${payload.rows.length} transaction(s) for upload`)
 
