@@ -1,0 +1,41 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-01-05",
+      "amount": "-68.50",
+      "currency": "CNY",
+      "description": "水果生鲜",
+      "payee": "盒马鲜生",
+      "metadata": {
+        "merchantOrderNo": "MO20240105",
+        "orderNo": "2024010500001",
+        "status": "交易成功"
+      }
+    },
+    {
+      "date": "2024-01-10",
+      "amount": "-23.80",
+      "currency": "CNY",
+      "description": "打车费用",
+      "payee": "滴滴出行",
+      "metadata": {
+        "merchantOrderNo": "MO20240110",
+        "orderNo": "2024011000002",
+        "status": "交易成功"
+      }
+    },
+    {
+      "date": "2024-01-20",
+      "amount": "500.00",
+      "currency": "CNY",
+      "description": "报销款",
+      "payee": "公司财务",
+      "metadata": {
+        "merchantOrderNo": "MO20240120",
+        "orderNo": "2024012000003",
+        "status": "交易成功"
+      }
+    }
+  ]
+}

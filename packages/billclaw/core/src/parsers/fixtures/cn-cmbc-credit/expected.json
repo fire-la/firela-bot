@@ -1,0 +1,38 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-01-15",
+      "amount": "-156.8",
+      "currency": "CNY",
+      "description": "超市购物",
+      "metadata": {
+        "authorizationCode": "AUTH001",
+        "cardNumber": "1234",
+        "postDate": "2024-01-20"
+      }
+    },
+    {
+      "date": "2024-01-10",
+      "amount": "-88",
+      "currency": "CNY",
+      "description": "支付宝",
+      "payee": "某某公司",
+      "metadata": {
+        "authorizationCode": "AUTH002",
+        "cardNumber": "1234",
+        "postDate": "2024-01-15"
+      }
+    },
+    {
+      "date": "2024-01-05",
+      "amount": "-500",
+      "currency": "CNY",
+      "description": "ATM取款",
+      "metadata": {
+        "cardNumber": "1234",
+        "postDate": "2024-01-10"
+      }
+    }
+  ]
+}

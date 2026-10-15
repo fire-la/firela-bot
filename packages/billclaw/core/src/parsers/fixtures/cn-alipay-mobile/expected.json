@@ -1,0 +1,50 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-01-15",
+      "amount": "-35.00",
+      "currency": "CNY",
+      "description": "咖啡",
+      "payee": "星巴克",
+      "metadata": {
+        "category": "餐饮美食",
+        "merchantOrderNo": "SB20240115001",
+        "orderNo": "2024011522001460741400001",
+        "payeeAccount": "account@starbucks.com",
+        "paymentMethod": "花呗",
+        "status": "交易成功"
+      }
+    },
+    {
+      "date": "2024-01-14",
+      "amount": "-28.50",
+      "currency": "CNY",
+      "description": "快车",
+      "payee": "滴滴出行",
+      "metadata": {
+        "category": "交通出行",
+        "merchantOrderNo": "DI20240114002",
+        "orderNo": "2024011422001460741400002",
+        "payeeAccount": "chu***@didichuxing.com",
+        "paymentMethod": "余额宝",
+        "status": "交易成功"
+      }
+    },
+    {
+      "date": "2024-01-13",
+      "amount": "100.00",
+      "currency": "CNY",
+      "description": "转账收款",
+      "payee": "张三",
+      "metadata": {
+        "category": "转账",
+        "orderNo": "2024011322001460741400003",
+        "payeeAccount": "zhangsan@email.com",
+        "paymentMethod": "余额",
+        "remark": "朋友还款",
+        "status": "交易成功"
+      }
+    }
+  ]
+}

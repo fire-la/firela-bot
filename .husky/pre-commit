@@ -6,7 +6,7 @@ echo "🚀 Running pre-commit checks..."
 
 # Check for Chinese characters in staged code files
 echo "🔍 Checking for Chinese characters in code..."
-staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|json|yaml|yml)$' | grep -v '/i18n/' || true)
+staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|json|yaml|yml)$' | grep -v '/i18n/' | grep -v '/src/parsers/fixtures/' || true)
 
 if [ -n "$staged_files" ]; then
   chinese_files=""

@@ -1,0 +1,58 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-01-15",
+      "amount": "-68.5",
+      "currency": "CNY",
+      "description": "水果生鲜",
+      "payee": "盒马鲜生",
+      "metadata": {
+        "merchantOrderId": "MO20240115",
+        "orderNo": "1000001",
+        "paymentMethod": "零钱",
+        "status": "支付成功",
+        "transactionType": "商户消费"
+      }
+    },
+    {
+      "date": "2024-01-16",
+      "amount": "500",
+      "currency": "CNY",
+      "description": "转账",
+      "payee": "张三",
+      "metadata": {
+        "orderNo": "2000001",
+        "paymentMethod": "零钱",
+        "status": "支付成功",
+        "transactionType": "二维码收款"
+      }
+    },
+    {
+      "date": "2024-01-19",
+      "amount": "25",
+      "currency": "CNY",
+      "description": "退款订单",
+      "payee": "美团外卖",
+      "metadata": {
+        "merchantOrderId": "MO500",
+        "orderNo": "5000001",
+        "paymentMethod": "银行卡(1234)",
+        "status": "已退款",
+        "transactionType": "商户消费"
+      }
+    },
+    {
+      "date": "2024-01-20",
+      "amount": "-1234.56",
+      "currency": "CNY",
+      "description": "小额付款",
+      "metadata": {
+        "orderNo": "6000001",
+        "paymentMethod": "招商银行储蓄卡(1234)",
+        "status": "支付成功",
+        "transactionType": "扫二维码付款"
+      }
+    }
+  ]
+}

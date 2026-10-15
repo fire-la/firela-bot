@@ -1,0 +1,4 @@
+Transaction date,Post date,Billing currency,Billing amount,Description,Merchant name,Transaction status,Country / region,Area / district
+15/01/2024,16/01/2024,HKD,-156.80,COFFEE SHOP,STARBUCKS,POSTED,Hong Kong,Central
+20/01/2024,21/01/2024,HKD,-200.00,APPLE PAY - MCDONALD'S,MCDONALD'S,PENDING,Hong Kong,
+25/01/2024,26/01/2024,HKD,-500.00,UNIONPAY - SUPERMARKET,PARKNSHOP,POSTED,Hong Kong,Kowloon

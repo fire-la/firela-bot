@@ -1,0 +1,121 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2026-02-01",
+      "amount": "3500.00",
+      "currency": "EUR",
+      "description": "Gutschrift - ACME GMBH - GEHALT JANUAR 2026",
+      "payee": "ACME GMBH",
+      "metadata": {
+        "transactionType": "Gutschrift"
+      }
+    },
+    {
+      "date": "2026-02-02",
+      "amount": "-45.67",
+      "currency": "EUR",
+      "description": "Kartenzahlung - REWE SAGT DANKE - BERLIN",
+      "payee": "REWE SAGT DANKE",
+      "metadata": {
+        "transactionType": "Kartenzahlung",
+        "bic": "DEUTDEFF"
+      }
+    },
+    {
+      "date": "2026-02-03",
+      "amount": "-39.95",
+      "currency": "EUR",
+      "description": "Lastschrift - TELEKOM DEUTSCHLAND - INTERNET FLAT RATE",
+      "payee": "TELEKOM DEUTSCHLAND",
+      "metadata": {
+        "transactionType": "Lastschrift",
+        "iban": "DE89370400440532013000",
+        "bic": "COBADEFFXXX",
+        "customerReference": "REF-2026-001"
+      }
+    },
+    {
+      "date": "2026-02-04",
+      "amount": "850.00",
+      "currency": "EUR",
+      "description": "Dauerauftrag - VERMIETER KG - MIETE FEBRUAR 2026",
+      "payee": "VERMIETER KG",
+      "metadata": {
+        "transactionType": "Dauerauftrag",
+        "iban": "DE12500105170648489808",
+        "bic": "BELADEBEXXX",
+        "customerReference": "SO-RENT"
+      }
+    },
+    {
+      "date": "2026-02-05",
+      "amount": "-32.50",
+      "currency": "EUR",
+      "description": "Überweisung - MAX MUSTERMANN - RÜCKERSTATTUNG ESSEN",
+      "payee": "MAX MUSTERMANN",
+      "metadata": {
+        "transactionType": "Überweisung",
+        "iban": "DE98765432101234567890",
+        "bic": "DEUTDEFF",
+        "customerReference": "TRF-001"
+      }
+    },
+    {
+      "date": "2026-02-06",
+      "amount": "-3.45",
+      "currency": "EUR",
+      "description": "Kartenzahlung - STARBUCKS COFFEE - KAFFEE TO GO",
+      "payee": "STARBUCKS COFFEE",
+      "metadata": {
+        "transactionType": "Kartenzahlung"
+      }
+    },
+    {
+      "date": "2026-02-07",
+      "amount": "-9.99",
+      "currency": "EUR",
+      "description": "Lastschrift - SPOTIFY AB - PREMIUM ABONNEMENT",
+      "payee": "SPOTIFY AB",
+      "metadata": {
+        "transactionType": "Lastschrift",
+        "iban": "IE12BOFI90000112345678",
+        "bic": "BOFIIE2D",
+        "customerReference": "SPOT-2026"
+      }
+    },
+    {
+      "date": "2026-02-08",
+      "amount": "-150.00",
+      "currency": "EUR",
+      "description": "Überweisung - ANNA SCHMIDT",
+      "payee": "ANNA SCHMIDT",
+      "metadata": {
+        "transactionType": "Überweisung",
+        "iban": "DE11112222333344445555",
+        "bic": "GENODEF1BER",
+        "customerReference": "TRF-002"
+      }
+    },
+    {
+      "date": "2026-02-09",
+      "amount": "-89.99",
+      "currency": "EUR",
+      "description": "Kartenzahlung - AMAZON.DE - BESTELLUNG #123-4567890",
+      "payee": "AMAZON.DE",
+      "metadata": {
+        "transactionType": "Kartenzahlung"
+      }
+    },
+    {
+      "date": "2026-02-10",
+      "amount": "-5.90",
+      "currency": "EUR",
+      "description": "Entgelt - DEUTSCHE BANK - KONTUFÜHRUNGSENTGELT",
+      "payee": "DEUTSCHE BANK",
+      "metadata": {
+        "transactionType": "Entgelt"
+      }
+    }
+  ]
+}

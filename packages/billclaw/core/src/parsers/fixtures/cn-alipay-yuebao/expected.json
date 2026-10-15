@@ -1,0 +1,49 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2025-09-24",
+      "amount": "0.01",
+      "currency": "CNY",
+      "description": "余额宝-收益发放",
+      "metadata": {
+        "category": "投资理财",
+        "paymentMethod": "余额宝",
+        "status": "交易成功"
+      }
+    },
+    {
+      "date": "2025-09-23",
+      "amount": "0.01",
+      "currency": "CNY",
+      "description": "余额宝-收益发放",
+      "metadata": {
+        "category": "投资理财",
+        "paymentMethod": "余额宝",
+        "status": "交易成功"
+      }
+    },
+    {
+      "date": "2025-09-23",
+      "amount": "-33.93",
+      "currency": "CNY",
+      "description": "美团外卖",
+      "metadata": {
+        "category": "餐饮",
+        "paymentMethod": "余额宝",
+        "status": "交易成功"
+      }
+    },
+    {
+      "date": "2025-09-22",
+      "amount": "-3.9",
+      "currency": "CNY",
+      "description": "XSDD2025092200154857",
+      "metadata": {
+        "category": "餐饮",
+        "paymentMethod": "余额宝",
+        "status": "交易成功"
+      }
+    }
+  ]
+}

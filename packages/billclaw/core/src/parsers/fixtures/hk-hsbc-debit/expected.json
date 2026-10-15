@@ -1,0 +1,32 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-01-15",
+      "amount": "-500",
+      "currency": "HKD",
+      "description": "ATM WITHDRAWAL",
+      "metadata": {
+        "balanceAfter": "5000.00 HKD"
+      }
+    },
+    {
+      "date": "2024-01-16",
+      "amount": "10000",
+      "currency": "HKD",
+      "description": "SALARY COMPANY",
+      "metadata": {
+        "balanceAfter": "15000.00 HKD"
+      }
+    },
+    {
+      "date": "2024-01-20",
+      "amount": "-200",
+      "currency": "HKD",
+      "description": "BILL PAYMENT",
+      "metadata": {
+        "balanceAfter": "14800.00 HKD"
+      }
+    }
+  ]
+}
