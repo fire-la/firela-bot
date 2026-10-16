@@ -257,6 +257,57 @@ describe("RelayClient", () => {
     })
   })
 
+  describe("registerWebhookCallback()", () => {
+    it("POSTs callback_url to /api/open-banking/health and parses the response", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () =>
+          JSON.stringify({ status: "ok", registered: true, account_id: "3-5" }),
+      })
+
+      const result = await client.registerWebhookCallback(
+        "https://billclaw.example.com/webhook/plaid",
+      )
+
+      expect(result).toEqual({
+        status: "ok",
+        registered: true,
+        account_id: "3-5",
+      })
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://relay.firela.io/api/open-banking/health",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            Authorization: "Bearer test-api-key",
+          }),
+          body: JSON.stringify({
+            callback_url: "https://billclaw.example.com/webhook/plaid",
+          }),
+        }),
+      )
+      // callback_url must ride the body only — never the URL (no account_id either)
+      const calledUrl = mockFetch.mock.calls[0][0] as string
+      expect(calledUrl).not.toContain("callback_url")
+      expect(mockFetch.mock.calls[0][1].body).not.toContain("account_id")
+    })
+
+    it("throws on non-OK (403 insufficient scope is non-retryable, single attempt)", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: async () =>
+          JSON.stringify({ success: false, message: "insufficient scope: openbanking" }),
+      })
+
+      await expect(
+        client.registerWebhookCallback("https://billclaw.example.com/webhook/plaid"),
+      ).rejects.toThrow()
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe("healthCheck()", () => {
     it("returns available=true on successful health endpoint", async () => {
       mockFetch.mockResolvedValueOnce({

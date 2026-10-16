@@ -75,7 +75,7 @@ _describe("Webhook Forwarding (Integration)", () => {
 
           expect(result).toBeDefined()
           expect(result.status).toBe("ok")
-          expect(result.webhook_registered).toBe(true)
+          expect(result.registered).toBe(true)
         } catch (error) {
           // Registration endpoint may not be deployed on this staging environment.
           expect(error).toBeDefined()
@@ -94,9 +94,9 @@ _describe("Webhook Forwarding (Integration)", () => {
 
           expect(result).toBeDefined()
           expect(result.status).toBe("ok")
-          // webhook_registered may be undefined or false for a plain health check
-          if (result.webhook_registered !== undefined) {
-            expect(result.webhook_registered).toBe(false)
+          // registered is omitted for a plain health check (no callback body)
+          if (result.registered !== undefined) {
+            expect(result.registered).toBe(false)
           }
         } catch (error) {
           // GET /health via request() may return non-JSON on some deployments.

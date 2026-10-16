@@ -53,6 +53,13 @@ const app = new Hono<{ Bindings: Env }>()
 // Request logging
 app.use("*", logger())
 
+// Capture the deployment's public origin (once per isolate) for the scheduled
+// webhook-registration job. Mounted on "*" BEFORE the /webhook mount — relay-
+// forwarded webhook POSTs don't match /api/*, and they are exactly the traffic
+// whose origin matters (issue #33).
+import { captureDeploymentOrigin } from "./lib/deployment-origin.js"
+app.use("*", captureDeploymentOrigin())
+
 // CORS - reflect requesting origin so credentials work on any user domain
 app.use(
   cors({
@@ -246,10 +253,17 @@ export default {
     // Wrap BOTH the dynamic import and the job in waitUntil so a module-load
     // failure or a top-level throw (e.g. getVltJwt / getPlaidRelayClient) is
     // caught and logged, not an unhandled rejection that fails the invocation.
+    // Each job gets its OWN waitUntil — a registration failure must never
+    // take the sync job (or the invocation) down with it.
     ctx.waitUntil(
       import("./jobs/sync-job.js")
         .then((mod) => mod.runSyncJob(env))
         .catch((err) => console.error("[sync-job] fatal:", err)),
+    )
+    ctx.waitUntil(
+      import("./jobs/webhook-registration-job.js")
+        .then((mod) => mod.runWebhookRegistrationJob(env))
+        .catch((err) => console.error("[webhook-registration] fatal:", err)),
     )
   },
 }

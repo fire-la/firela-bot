@@ -7,7 +7,9 @@
  * `toPlaidUpload` → `uploadTransactions`. Only the per-account cursor is persisted
  * (KV); VLT is the ledger / system of record.
  *
- * Triggered by the Worker `scheduled()` handler (cron) and by `POST /api/sync/run`.
+ * Triggered by the Worker `scheduled()` handler (cron), by `POST /api/sync/run`,
+ * and — debounced 60s, verified-signature branch only — by received Plaid
+ * webhooks (issue #33; ADR-009 amendment).
  *
  * @packageDocumentation
  */
@@ -181,7 +183,10 @@ async function syncOneAccount(
   env: Env,
 ): Promise<AccountSyncOutcome> {
   // Best-effort KV lock (get-then-put; KV is eventually consistent — documented
-  // acceptable trade-off given idempotent VLT upload + 6h cadence).
+  // acceptable trade-off given idempotent VLT upload. The original "6h cadence"
+  // premise was superseded by webhook triggering (issue #33): a 60s debounce at
+  // the webhook call site absorbs bursts; the residual race is bounded the same
+  // way — VLT dedupes by transaction_id).
   if ((await env.CONFIG.get(lockKey(account.id))) != null) {
     console.log(`[sync-job] ${account.id}: lock held, skipping`)
     return { id: account.id, status: "skipped" }

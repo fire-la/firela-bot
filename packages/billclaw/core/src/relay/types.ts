@@ -71,12 +71,19 @@ export interface RelayHealthCheckRequestBody {
 }
 
 /**
- * Health check response (extended with webhook registration status)
+ * Health check / callback registration response.
+ *
+ * Matches the relay's actual contract (controller/openbanking_health.go +
+ * toykit docs/openbanking/CLIENT_INTEGRATION.md): empty-body requests get
+ * the plain health status; registration responses add `registered` and the
+ * server-derived routing key.
  */
 export interface RelayHealthCheckResponse {
   status: 'ok'
-  version: string
-  webhook_registered?: boolean
+  /** true on registration responses; omitted on plain health checks */
+  registered?: boolean
+  /** Server-derived routing key (userId-tokenId); registration responses only */
+  account_id?: string
 }
 
 /**

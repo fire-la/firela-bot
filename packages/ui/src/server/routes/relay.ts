@@ -8,10 +8,10 @@
  */
 
 import { Hono } from "hono"
-import { RelayClient, maskApiKey } from "@firela/billclaw-core/relay"
+import { maskApiKey } from "@firela/billclaw-core/relay"
 
 import { DEFAULT_RELAY_URL } from "../constants.js"
-import { getRelayApiKey } from "../lib/relay-helpers.js"
+import { getRelayApiKey, getRelayClient } from "../lib/relay-helpers.js"
 import { isApp } from "../middleware/auth.js"
 import type { Env } from "../index.js"
 
@@ -88,20 +88,6 @@ relayRoutes.post("/connect/session", async (c) => {
     return c.json({ success: false, error: message }, 500)
   }
 })
-
-/**
- * Create a RelayClient from environment bindings or KV-stored key.
- *
- * @param env - Server environment bindings
- * @returns Configured RelayClient instance
- */
-async function getRelayClient(env: Env): Promise<RelayClient> {
-  const apiKey = await getRelayApiKey(env)
-  return new RelayClient({
-    url: env.FIRELA_RELAY_URL || DEFAULT_RELAY_URL,
-    apiKey: apiKey!,
-  })
-}
 
 /**
  * GET /api/relay/health
