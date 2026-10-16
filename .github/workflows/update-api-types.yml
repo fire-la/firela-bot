@@ -13,8 +13,48 @@ on:
 jobs:
   update-types:
     runs-on: ubuntu-latest
+    # Least privilege; also pins what the GITHUB_TOKEN fallback path needs
+    # (repo default is write today - keep the fallback from silently
+    # no-oping if that default ever flips to read-only).
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
+      # PRs created with GITHUB_TOKEN leave their CI/E2E runs in
+      # action_required (one manual approval per run) - mint a release-app
+      # token so the dependency-bump PR runs its checks unassisted (#56).
+      # Singular permission-* inputs only: create-github-app-token v2.2.2
+      # silently ignores a plural `permissions:` input.
+      - name: Check release app
+        id: appcfg
+        env:
+          RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+        run: |
+          if [ -n "$RELEASE_APP_ID" ]; then echo "has_app=true" >> "$GITHUB_OUTPUT"; else echo "has_app=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Create release app token
+        if: steps.appcfg.outputs.has_app == 'true'
+        id: app-token
+        # Mint failure falls back to github.token below instead of blocking
+        # the daily update; the annotation step keeps that loud.
+        continue-on-error: true
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write # the labels: input needs the issues API
+
+      - name: Warn on token fallback
+        if: steps.app-token.outcome == 'failure'
+        run: echo "::error::release app token mint failed - falling back to GITHUB_TOKEN; the PR's CI runs will need manual approval"
+
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          token: ${{ steps.app-token.outputs.token || github.token }}
 
       - uses: pnpm/action-setup@v2
         with:
@@ -57,7 +97,7 @@ jobs:
         if: steps.check.outputs.needs_update == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
           commit-message: 'chore: update @firela/api-types to ${{ steps.check.outputs.canary }}'
           title: 'chore: update @firela/api-types to ${{ steps.check.outputs.canary }}'
           body: |

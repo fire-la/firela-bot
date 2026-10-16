@@ -30,11 +30,49 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # Mint a release-app token up front: both the changesets version PR and
+      # (on qualifying release merges) the tag push below must run under the
+      # app identity. PRs created with GITHUB_TOKEN leave their CI/E2E runs in
+      # action_required - one manual approval per run, which blocks every
+      # release (#56).
+      # NOTE: singular permission-* inputs only; create-github-app-token
+      # v2.2.2 silently ignores a plural `permissions:` input.
+      - name: Check release app
+        id: appcfg
+        env:
+          RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+        run: |
+          if [ -n "$RELEASE_APP_ID" ]; then echo "has_app=true" >> "$GITHUB_OUTPUT"; else echo "has_app=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Create release app token
+        if: steps.appcfg.outputs.has_app == 'true'
+        id: app-token
+        # Mint failure falls back to github.token below instead of blocking
+        # the version PR; the annotation step below keeps that loud.
+        continue-on-error: true
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # The run stays green on fallback, so make the no-op visible: a mint
+      # failure means PRs go out as GITHUB_TOKEN again and every CI/E2E run
+      # needs manual approval (release skill: Troubleshooting).
+      - name: Warn on token fallback
+        if: steps.app-token.outcome == 'failure'
+        run: echo "::error::release app token mint failed - falling back to GITHUB_TOKEN; PR CI runs will need manual approval again (see release skill troubleshooting)"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Nothing below relies on checkout's persisted credential:
+          # changesets authenticates via its own ~/.netrc entry, the tag push
+          # uses a one-shot header, and ls-remote here is public-read.
+          persist-credentials: false
+          token: ${{ steps.app-token.outputs.token || github.token }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -66,50 +104,38 @@ jobs:
 
       # Version PR only - publishing is consolidated on the tag-triggered
       # publish.yml (OIDC trusted publishing; a tag is the release moment).
+      # The token MUST come via the github-token input, and the env
+      # GITHUB_TOKEN line that used to live here is deliberately removed:
+      # changesets/action v1.9.0 reads process.env.GITHUB_TOKEN FIRST, so
+      # keeping the env would silently pin the action to GITHUB_TOKEN and
+      # void the app-identity fix (#56).
       - name: Create Release Pull Request
         uses: changesets/action@3841a0683d3cfa6dae0f9bb335290003010fe3f0 # v1.9.0
         with:
           version: pnpm version-packages
           commit: "chore: release package versions"
           title: "chore: release package versions"
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HUSKY: 0
 
-      # Release moment: when the version PR merges (its merge commit carries
-      # the release title), cut the tag. The tag triggers publish.yml (npm via
-      # OIDC), release-bundle.yml and clawhub-publish.yml. Previously
-      # `changeset publish` cut tags implicitly; with publishing consolidated
-      # on publish.yml this step keeps the tag mechanical instead of manual.
+      # Release moment: cut the tag when the version PR merge lands as a
+      # commit whose message starts with the release title. CAVEAT: under
+      # `gh pr merge --merge` (the release skill's live path) the head commit
+      # is "Merge pull request #N ..." and this gate never fires - the tag is
+      # then cut manually per the release skill (#61 tracks fix-vs-delete).
+      # The tag triggers publish.yml (npm via OIDC), release-bundle.yml and
+      # clawhub-publish.yml.
       #
       # The tag MUST be pushed with a non-GITHUB_TOKEN credential: events
       # created by GITHUB_TOKEN never trigger downstream workflow runs. The
       # release GitHub App fills that role without expiring tokens (App
       # credentials have no 90-day cap, unlike PATs).
-      - name: Check release app
-        id: appcfg
-        env:
-          RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
-        run: |
-          if [ -n "$RELEASE_APP_ID" ]; then echo "has_app=true" >> "$GITHUB_OUTPUT"; else echo "has_app=false" >> "$GITHUB_OUTPUT"; fi
-
-      - name: Create release app token
-        if: >-
-          steps.appcfg.outputs.has_app == 'true' &&
-          github.event_name == 'push' &&
-          startsWith(github.event.head_commit.message, 'chore: release package versions')
-        id: app-token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permissions: |
-            contents: write
-
       - name: Cut version tag
         if: >-
           github.event_name == 'push' &&
-          startsWith(github.event.head_commit.message, 'chore: release package versions')
+          startsWith(github.event.head_commit.message, 'chore: release package versions') &&
+          (steps.appcfg.outputs.has_app != 'true' || steps.app-token.outcome == 'success')
         env:
           HAS_APP: ${{ steps.appcfg.outputs.has_app }}
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -140,10 +166,10 @@ jobs:
             TAG="$TAG-$(git rev-parse --short HEAD)"
           fi
           git tag "$TAG" "$HEAD_SHA"
-          # One-shot credential for this single push: the token never appears
-          # in a URL, command-line value, or persisted config. (A URL-scoped
-          # http.<url>.extraheader would NOT match checkout's origin remote -
-          # actions/checkout sets it without the .git suffix - and the push
-          # would silently fall back to GITHUB_TOKEN, whose events never
-          # trigger downstream workflows.)
+          # One-shot credential for this single push: the token appears in no
+          # URL, command-line value, or persisted git config (checkout runs
+          # with persist-credentials: false). It does sit in ~/.netrc for the
+          # rest of the job - the changesets step's git-cli auth entry, which
+          # is inherent to changesets/action git-cli mode on an ephemeral
+          # runner.
           git -c "http.extraheader=Authorization: Bearer ${APP_TOKEN}" push origin "$TAG"
