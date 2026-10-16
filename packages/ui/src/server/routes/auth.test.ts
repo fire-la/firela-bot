@@ -16,7 +16,7 @@
  * @packageDocumentation
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { Hono } from "hono"
 
 import { authRoutes } from "./auth.js"
@@ -167,18 +167,26 @@ describe("POST /auth/setup", () => {
 
 describe("POST /auth/setup anonymous-oracle throttle", () => {
   it("5 wrong passwords lock the 6th attempt out with 429 SETUP_THROTTLED", async () => {
-    const kv = makeKv({ [SETUP_PASSWORD_KEY]: "stored" })
-    const db = makeD1()
-    for (let i = 0; i < 5; i++) {
-      const res = await setup(kv, db, "wrong-" + i, "203.0.113.9")
-      expect(res.status).toBe(401)
+    // Same race as issue #35 in config.test.ts: the 1s first backoff tier can
+    // expire between requests 5 and 6 on a slow runner — freeze the clock.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+    try {
+      const kv = makeKv({ [SETUP_PASSWORD_KEY]: "stored" })
+      const db = makeD1()
+      for (let i = 0; i < 5; i++) {
+        const res = await setup(kv, db, "wrong-" + i, "203.0.113.9")
+        expect(res.status).toBe(401)
+      }
+      const locked = await setup(kv, db, "stored", "203.0.113.9") // even the right one
+      expect(locked.status).toBe(429)
+      const body = (await locked.json()) as { errorCode: string; retryAfter: number }
+      expect(body.errorCode).toBe("SETUP_THROTTLED")
+      expect(body.retryAfter).toBeGreaterThan(0)
+      expect(locked.headers.get("Retry-After")).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
     }
-    const locked = await setup(kv, db, "stored", "203.0.113.9") // even the right one
-    expect(locked.status).toBe(429)
-    const body = (await locked.json()) as { errorCode: string; retryAfter: number }
-    expect(body.errorCode).toBe("SETUP_THROTTLED")
-    expect(body.retryAfter).toBeGreaterThan(0)
-    expect(locked.headers.get("Retry-After")).toBeTruthy()
   })
 
   it("a successful login clears the failure counter", async () => {
@@ -193,14 +201,21 @@ describe("POST /auth/setup anonymous-oracle throttle", () => {
   })
 
   it("throttle buckets are per client IP", async () => {
-    const kv = makeKv({ [SETUP_PASSWORD_KEY]: "stored" })
-    const db = makeD1()
-    for (let i = 0; i < 5; i++) {
-      expect((await setup(kv, db, "nope", "192.0.2.1")).status).toBe(401)
+    // Frozen clock for the same issue #35 race (5th attempt arms a 1s lock).
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+    try {
+      const kv = makeKv({ [SETUP_PASSWORD_KEY]: "stored" })
+      const db = makeD1()
+      for (let i = 0; i < 5; i++) {
+        expect((await setup(kv, db, "nope", "192.0.2.1")).status).toBe(401)
+      }
+      expect((await setup(kv, db, "nope", "192.0.2.1")).status).toBe(429)
+      // A different IP is a different bucket and logs in fine.
+      expect((await setup(kv, db, "stored", "192.0.2.2")).status).toBe(200)
+    } finally {
+      vi.useRealTimers()
     }
-    expect((await setup(kv, db, "nope", "192.0.2.1")).status).toBe(429)
-    // A different IP is a different bucket and logs in fine.
-    expect((await setup(kv, db, "stored", "192.0.2.2")).status).toBe(200)
   })
 })
 

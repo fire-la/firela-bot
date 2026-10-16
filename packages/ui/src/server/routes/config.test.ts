@@ -5,7 +5,7 @@
  * @packageDocumentation
  */
 
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 import { Hono } from "hono"
 
 import { configRoutes } from "./config.js"
@@ -185,6 +185,10 @@ describe("PUT /settings/password", () => {
     }
   }
 
+  // Client IP sent by putPassword; the throttle key is `pwchange:${CLIENT_IP}`
+  // (routes/config.ts), so assertions must derive from the same constant.
+  const CLIENT_IP = "192.0.2.10"
+
   function putPassword(
     env: ReturnType<typeof makeEnv>,
     db: ReturnType<typeof makeD1>,
@@ -196,7 +200,7 @@ describe("PUT /settings/password", () => {
       {
         method: "PUT",
         body: JSON.stringify({ currentPassword, newPassword }),
-        headers: { "content-type": "application/json", "CF-Connecting-IP": "192.0.2.10" },
+        headers: { "content-type": "application/json", "CF-Connecting-IP": CLIENT_IP },
       },
       { CONFIG: env.CONFIG, DB: db } as never,
     )
@@ -217,14 +221,46 @@ describe("PUT /settings/password", () => {
   })
 
   it("locks after 5 wrong attempts with 429 + Retry-After (OCR: no throttle here would let a stolen owner JWT brute-force)", async () => {
-    const env = makeEnv()
-    const db = makeD1()
-    for (let i = 0; i < 5; i++) {
-      expect((await putPassword(env, db, "nope")).status).toBe(401)
+    // The first backoff tier is 1s (2^0), so a second-boundary crossing between
+    // requests 5 and 6 on a slow runner expires the lock mid-test (issue #35).
+    // Freeze the clock so the 6 requests share one nowSec() (order matters:
+    // setSystemTime before useFakeTimers throws in vitest 3).
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+    try {
+      const env = makeEnv()
+      const db = makeD1()
+      for (let i = 0; i < 5; i++) {
+        expect((await putPassword(env, db, "nope")).status).toBe(401)
+      }
+      const locked = await putPassword(env, db, "stored") // even the right one
+      expect(locked.status).toBe(429)
+      expect(locked.headers.get("Retry-After")).toBe("1")
+      expect(env._raw(SETUP_PASSWORD_KEY)).toBe("stored")
+    } finally {
+      vi.useRealTimers()
     }
-    const locked = await putPassword(env, db, "stored") // even the right one
-    expect(locked.status).toBe(429)
-    expect(locked.headers.get("Retry-After")).toBeTruthy()
-    expect(env._raw(SETUP_PASSWORD_KEY)).toBe("stored")
+  })
+
+  it("lets the correct password through after the first-tier backoff expires", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+    try {
+      const env = makeEnv()
+      const db = makeD1()
+      for (let i = 0; i < 5; i++) {
+        expect((await putPassword(env, db, "nope")).status).toBe(401)
+      }
+      expect((await putPassword(env, db, "stored")).status).toBe(429)
+      // 5th failure armed locked_until = nowSec() + 1; past that it unlocks,
+      // the correct password succeeds, and the counter row is cleared.
+      vi.advanceTimersByTime(1_001)
+      const res = await putPassword(env, db, "stored")
+      expect(res.status).toBe(200)
+      expect(db._throttle(`pwchange:${CLIENT_IP}`)).toBeUndefined()
+      expect(env._raw(SETUP_PASSWORD_KEY)).toBe("new-pass")
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
