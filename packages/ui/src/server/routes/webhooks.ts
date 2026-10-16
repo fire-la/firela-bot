@@ -9,13 +9,42 @@
 
 import { Hono } from "hono"
 import { PlaidWebhookVerifier } from "@firela/billclaw-core"
-import { RelayClient } from "@firela/billclaw-core/relay"
 import type { RelayJwkProxyResponse } from "@firela/billclaw-core/relay"
-import { DEFAULT_RELAY_URL, DEFAULT_PLAID_ENV } from "../constants.js"
-import { getRelayApiKey } from "../lib/relay-helpers.js"
+import { DEFAULT_PLAID_ENV, WEBHOOK_SYNC_DEBOUNCE_KEY, WEBHOOK_SYNC_DEBOUNCE_TTL_SEC } from "../constants.js"
+import { getRelayClient } from "../lib/relay-helpers.js"
 import type { Env } from "../index.js"
 
 export const webhookRoutes = new Hono<{ Bindings: Env }>()
+
+/**
+ * Debounced webhook→sync trigger (issue #33).
+ *
+ * Best-effort global KV gate: at most one runSyncJob per 60s window (KV
+ * expirationTtl floor), killing Plaid burst/retry amplification. The gate
+ * lives HERE, never inside runSyncJob — manual /api/sync/run and the 6h cron
+ * keep their documented unconditional semantics.
+ *
+ * ponytail: racy get-then-put on eventually-consistent KV is acceptable —
+ * per-account sync locks + VLT transaction_id dedup bound the damage. A
+ * webhook at t+61s while a lock is still held (TTL 900s) degrades to
+ * "account skipped, next cron picks it up" — never a wedge. runSyncJob's
+ * own upload.mode gate gives manual-mode deployments the existing no-op.
+ */
+async function triggerSyncFromWebhook(env: Env): Promise<void> {
+  try {
+    // Import first so a module-load failure doesn't consume the debounce window
+    const { runSyncJob } = await import("../jobs/sync-job.js")
+    if (await env.CONFIG.get(WEBHOOK_SYNC_DEBOUNCE_KEY)) return
+    await env.CONFIG.put(WEBHOOK_SYNC_DEBOUNCE_KEY, "1", {
+      expirationTtl: WEBHOOK_SYNC_DEBOUNCE_TTL_SEC,
+    })
+    await runSyncJob(env)
+  } catch (error) {
+    // Mirror the scheduled() pattern: a trigger failure is logged, never an
+    // unhandled waitUntil rejection; the next cron tick recovers.
+    console.error("[webhook] sync trigger failed:", error)
+  }
+}
 
 /**
  * Create a PlaidWebhookVerifier with RelayClient-backed JWK fetch.
@@ -28,11 +57,7 @@ export const webhookRoutes = new Hono<{ Bindings: Env }>()
  * @returns PlaidWebhookVerifier instance with real JWK fetch
  */
 export async function createPlaidVerifier(env: Env): Promise<PlaidWebhookVerifier> {
-  const apiKey = await getRelayApiKey(env)
-  const client = new RelayClient({
-    url: env.FIRELA_RELAY_URL || DEFAULT_RELAY_URL,
-    apiKey: apiKey!,
-  })
+  const client = await getRelayClient(env)
 
   return new PlaidWebhookVerifier(
     {
@@ -107,6 +132,21 @@ webhookRoutes.post("/plaid", async (c) => {
           { received: false, error: "Invalid signature" },
           401,
         )
+      }
+
+      // Verified webhook = Plaid says data changed. Fire-and-forget sync
+      // trigger (issue #33), ONLY on this signature-verified branch — the
+      // sandbox no-header branch is unauthenticated by default and must not
+      // become a sync amplifier. Runs after the response via waitUntil (the
+      // relay forward times out in 10s — never block the reply). Gate on
+      // TRANSACTIONS: Plaid PINGs right after registration and ERROR/LOGIN
+      // carry no new data — syncing those burns CPU and the debounce window.
+      if (body.webhook_type === "TRANSACTIONS") {
+        try {
+          c.executionCtx.waitUntil(triggerSyncFromWebhook(c.env))
+        } catch {
+          // No ExecutionContext (e.g. tests without a mock ctx) — skip trigger
+        }
       }
     } else {
       // No verification header — reject in production, allow in sandbox with warning

@@ -16,7 +16,12 @@ import type { Logger } from "../errors/errors.js"
 import { calculateBackoffDelay } from "../utils/backoff.js"
 import { parseRelayError } from "./errors.js"
 import { redactSensitive } from "./redact.js"
-import type { RelayClientConfig, RelayHealthCheckResult } from "./types.js"
+import type {
+  RelayClientConfig,
+  RelayHealthCheckResponse,
+  RelayHealthCheckResult,
+  WebhookCallbackRegistration,
+} from "./types.js"
 
 /**
  * Retryable HTTP status codes
@@ -178,6 +183,27 @@ export class RelayClient {
 
     // Should never reach here, but TypeScript needs it
     throw parseRelayError(lastError || new Error("Unknown error"), { endpoint })
+  }
+
+  /**
+   * Register this deployment's webhook callback URL with the relay
+   *
+   * POST /api/open-banking/health with a callback_url body re-arms the
+   * relay-side 24h callback registration (routing key userId-tokenId is
+   * derived server-side from the authenticated token — no account_id is
+   * sent). Requires an API key with openbanking scope.
+   *
+   * @param callbackUrl - Public URL of this deployment's webhook receiver
+   * @returns Registration confirmation
+   * @throws RelayHttpError | RelayError on failure (403 = key lacks openbanking scope)
+   */
+  async registerWebhookCallback(
+    callbackUrl: string,
+  ): Promise<RelayHealthCheckResponse> {
+    return this.request<RelayHealthCheckResponse>("/api/open-banking/health", {
+      method: "POST",
+      body: JSON.stringify({ callback_url: callbackUrl } satisfies WebhookCallbackRegistration),
+    })
   }
 
   /**

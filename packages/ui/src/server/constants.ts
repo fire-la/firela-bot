@@ -30,6 +30,26 @@ export const MIN_PASSWORD_LENGTH = 8
 /** KV key for relay API key (configured via UI settings) */
 export const RELAY_API_KEY_KEY = "firela:relay:api_key"
 
+/**
+ * Observed public origin of this deployment (scheme+host, no path) — captured
+ * from the first request per isolate (lib/deployment-origin.ts). The scheduled
+ * webhook-registration job derives the relay callback URL from it; scheduled
+ * handlers have no request to read the origin from.
+ */
+export const DEPLOYMENT_ORIGIN_KEY = "firela:deployment:origin"
+
+/** KV stamp (ISO time) of the last successful relay webhook-callback registration. */
+export const WEBHOOK_REGISTERED_AT_KEY = "firela:relay:webhook_registered_at"
+
+/**
+ * Webhook-triggered sync debounce (issue #33): best-effort KV gate so Plaid
+ * webhook bursts fire at most one runSyncJob per window. 60s = KV expirationTtl
+ * floor, deliberately shorter than the per-account sync locks (900s) — see
+ * routes/webhooks.ts.
+ */
+export const WEBHOOK_SYNC_DEBOUNCE_KEY = "firela:sync:webhook_debounce"
+export const WEBHOOK_SYNC_DEBOUNCE_TTL_SEC = 60
+
 /** KV key for Cloudflare API token (configured via UI settings) */
 export const CF_API_TOKEN_KEY = "firela:cloudflare:api_token"
 
