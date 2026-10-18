@@ -30,11 +30,10 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      # Mint a release-app token up front: both the changesets version PR and
-      # (on qualifying release merges) the tag push below must run under the
-      # app identity. PRs created with GITHUB_TOKEN leave their CI/E2E runs in
-      # action_required - one manual approval per run, which blocks every
-      # release (#56).
+      # Mint a release-app token up front: the changesets version PR must run
+      # under the app identity. PRs created with GITHUB_TOKEN leave their
+      # CI/E2E runs in action_required - one manual approval per run, which
+      # blocks every release (#56).
       # NOTE: singular permission-* inputs only; create-github-app-token
       # v2.2.2 silently ignores a plural `permissions:` input.
       - name: Check release app
@@ -69,8 +68,7 @@ jobs:
         with:
           fetch-depth: 0
           # Nothing below relies on checkout's persisted credential:
-          # changesets authenticates via its own ~/.netrc entry, the tag push
-          # uses a one-shot header, and ls-remote here is public-read.
+          # changesets authenticates via its own ~/.netrc entry.
           persist-credentials: false
           token: ${{ steps.app-token.outputs.token || github.token }}
 
@@ -119,57 +117,7 @@ jobs:
         env:
           HUSKY: 0
 
-      # Release moment: cut the tag when the version PR merge lands as a
-      # commit whose message starts with the release title. CAVEAT: under
-      # `gh pr merge --merge` (the release skill's live path) the head commit
-      # is "Merge pull request #N ..." and this gate never fires - the tag is
-      # then cut manually per the release skill (#61 tracks fix-vs-delete).
-      # The tag triggers publish.yml (npm via OIDC), release-bundle.yml and
+      # Release moment: none here. The version tag is cut manually per the
+      # release skill (/release-merge) - the only tag mechanism (#61); the
+      # tag triggers publish.yml (npm via OIDC), release-bundle.yml and
       # clawhub-publish.yml.
-      #
-      # The tag MUST be pushed with a non-GITHUB_TOKEN credential: events
-      # created by GITHUB_TOKEN never trigger downstream workflow runs. The
-      # release GitHub App fills that role without expiring tokens (App
-      # credentials have no 90-day cap, unlike PATs).
-      - name: Cut version tag
-        if: >-
-          github.event_name == 'push' &&
-          startsWith(github.event.head_commit.message, 'chore: release package versions') &&
-          (steps.appcfg.outputs.has_app != 'true' || steps.app-token.outcome == 'success')
-        env:
-          HAS_APP: ${{ steps.appcfg.outputs.has_app }}
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$HAS_APP" != "true" ]; then
-            # Bail BEFORE creating a local tag (a stray local tag would collide
-            # with the manual cut). Pushing with GITHUB_TOKEN would not trigger
-            # the publish/bundle workflows anyway.
-            echo "::warning::RELEASE_APP_ID not configured - automated tag cut disabled."
-            echo "Cut the tag manually (release skill step): git tag 'v<version>' && git push origin 'v<version>'"
-            exit 0
-          fi
-          # Highest version across the publishable packages: a release that
-          # bumps only an independent version line (runtime-adapters, outside
-          # the core/cli linked group) must still yield a fresh tag.
-          VERSION=$(printf '%s\n' \
-            "$(node -p "require('./packages/billclaw/core/package.json').version")" \
-            "$(node -p "require('./packages/billclaw/cli/package.json').version")" \
-            "$(node -p "require('./packages/runtime-adapters/package.json').version")" \
-            | sort -V | tail -1)
-          TAG="v$VERSION"
-          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q .; then
-            # Tag taken (same max version again): suffix the short SHA so the
-            # release still fires. publish.yml's npm-view check keeps already
-            # published versions from double-publishing.
-            TAG="$TAG-$(git rev-parse --short HEAD)"
-          fi
-          git tag "$TAG" "$HEAD_SHA"
-          # One-shot credential for this single push: the token appears in no
-          # URL, command-line value, or persisted git config (checkout runs
-          # with persist-credentials: false). It does sit in ~/.netrc for the
-          # rest of the job - the changesets step's git-cli auth entry, which
-          # is inherent to changesets/action git-cli mode on an ephemeral
-          # runner.
-          git -c "http.extraheader=Authorization: Bearer ${APP_TOKEN}" push origin "$TAG"
