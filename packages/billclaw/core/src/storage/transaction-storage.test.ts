@@ -45,8 +45,10 @@ describe("initializeStorage", () => {
   let tempDir: string
 
   beforeEach(async () => {
-    tempDir = path.join(os.tmpdir(), `billclaw-test-${Date.now()}`)
-    await fs.mkdir(tempDir, { recursive: true })
+    // mkdtemp: unique per creation - a Date.now() name collides across
+    // parallel test files, and one file's afterEach rm -rf then deletes
+    // another file's active dir (#64)
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "billclaw-test-"))
   })
 
   afterEach(async () => {
@@ -171,8 +173,7 @@ describe("writeTransactions and readTransactions", () => {
   let config: StorageConfig
 
   beforeEach(async () => {
-    tempDir = path.join(os.tmpdir(), `billclaw-test-${Date.now()}`)
-    await fs.mkdir(tempDir, { recursive: true })
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "billclaw-test-"))
 
     config = {
       path: tempDir,

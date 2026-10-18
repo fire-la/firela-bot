@@ -16,9 +16,9 @@ describe("ConfigManager", () => {
   let originalEnv: NodeJS.ProcessEnv
 
   beforeEach(async () => {
-    // Create temp config file
-    const tmpDir = `${os.tmpdir()}/billclaw-test-${Date.now()}`
-    await fs.mkdir(tmpDir, { recursive: true })
+    // Create temp config file (mkdtemp: unique per creation - Date.now()
+    // names collide across parallel test files, #64)
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "billclaw-test-"))
     testConfigPath = `${tmpDir}/config.json`
 
     // Save original env

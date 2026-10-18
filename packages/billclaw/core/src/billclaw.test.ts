@@ -150,9 +150,9 @@ describe("Billclaw", () => {
   beforeEach(async () => {
     vi.clearAllMocks()
 
-    // Create temp directory
-    tempDir = path.join(os.tmpdir(), `billclaw-test-${Date.now()}`)
-    await fs.mkdir(tempDir, { recursive: true })
+    // Create temp directory (mkdtemp: unique per creation - Date.now() names
+    // collide across parallel test files, #64)
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "billclaw-test-"))
 
     const mockLogger = new MockLogger()
     mockConfig = new MockConfigProvider()
