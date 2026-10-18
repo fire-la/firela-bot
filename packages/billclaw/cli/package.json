@@ -1,6 +1,6 @@
 {
   "name": "@firela/billclaw-cli",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "BillClaw CLI - Standalone command-line interface for financial data management",
   "type": "module",
   "main": "./dist/index.js",
