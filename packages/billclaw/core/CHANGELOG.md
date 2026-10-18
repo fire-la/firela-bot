@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1
+
+### Patch Changes
+
+- ee16eb0: Release pipeline: version and dependency-bump PRs are now created under the release app identity so their CI/E2E runs no longer sit in `action_required` awaiting manual approval (fixes the recurring release-blocker workflow)
+
 ## 0.8.0
 
 ### Minor Changes
