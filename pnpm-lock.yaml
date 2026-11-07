@@ -79,8 +79,8 @@ importers:
   packages/billclaw/core:
     dependencies:
       '@firela/api-types':
-        specifier: 0.0.0-canary.0ba0185
-        version: 0.0.0-canary.0ba0185
+        specifier: 0.0.0-canary.c7e4ab1
+        version: 0.0.0-canary.c7e4ab1
       '@firela/cn-alipay':
         specifier: 0.1.11
         version: 0.1.11
@@ -138,6 +138,10 @@ importers:
       zod:
         specifier: ^3.25.0
         version: 3.25.76
+    optionalDependencies:
+      keytar:
+        specifier: ^6.0.1
+        version: 6.0.1
     devDependencies:
       '@firela/runtime-adapters':
         specifier: workspace:*
@@ -169,10 +173,6 @@ importers:
       wrangler:
         specifier: ^4.127.0
         version: 4.127.0(@cloudflare/workers-types@5.20260828.1)
-    optionalDependencies:
-      keytar:
-        specifier: ^6.0.1
-        version: 6.0.1
 
   packages/runtime-adapters:
     devDependencies:
@@ -198,8 +198,8 @@ importers:
   packages/ui:
     dependencies:
       '@firela/api-types':
-        specifier: 0.0.0-canary.0ba0185
-        version: 0.0.0-canary.0ba0185
+        specifier: 0.0.0-canary.c7e4ab1
+        version: 0.0.0-canary.c7e4ab1
       '@firela/billclaw-core':
         specifier: workspace:*
         version: link:../billclaw/core
@@ -1038,8 +1038,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@firela/api-types@0.0.0-canary.0ba0185':
-    resolution: {integrity: sha512-oCKWmOZ8/GVcw7ygW20RaiAL3ghvTBJcs39KctbrulZbsga4gxvMPmPAM4P0KozYkBAplODU6zG9GSBNiS1dVA==}
+  '@firela/api-types@0.0.0-canary.c7e4ab1':
+    resolution: {integrity: sha512-VwdGI7n1LhVIcAjosP1IYmLzazPu/I/Ryox7ftMXNt0l7BwMftSmZh8pILQzhaEQJ2xdXkhDo4SachS4tYqKow==}
 
   '@firela/cn-alipay-mobile@0.1.11':
     resolution: {integrity: sha512-hfpmtx+edo+69FGRpF3zgLqHcU9e/b62CPEnc//RNB5Dx3lzmuhjvcq+uAzYTuE2ISTuSk391DeSHzZOWW+kAA==}
@@ -5137,7 +5137,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@firela/api-types@0.0.0-canary.0ba0185': {}
+  '@firela/api-types@0.0.0-canary.c7e4ab1': {}
 
   '@firela/cn-alipay-mobile@0.1.11': {}
 

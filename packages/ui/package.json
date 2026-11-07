@@ -40,7 +40,7 @@
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
-    "@firela/api-types": "0.0.0-canary.0ba0185",
+    "@firela/api-types": "0.0.0-canary.c7e4ab1",
     "@firela/billclaw-core": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
     "axios": "^1.12.0",

@@ -101,7 +101,7 @@
     "keytar": "^6.0.1"
   },
   "dependencies": {
-    "@firela/api-types": "0.0.0-canary.0ba0185",
+    "@firela/api-types": "0.0.0-canary.c7e4ab1",
     "@firela/cn-alipay": "0.1.11",
     "@firela/cn-alipay-mobile": "0.1.11",
     "@firela/cn-alipay-yuebao": "0.1.11",
